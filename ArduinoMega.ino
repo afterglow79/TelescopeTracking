@@ -37,13 +37,16 @@ char objAlt[6];
 float dps = 0.225;  // degrees per step of the motor
                     // w/ this, 90 degrees is 400 steps
 
-char *object;
+char *object; // to print to scrteen what object we are looking at
 
-int menuCheck = 0;
+int menuCheck = 0; // to not draw a menu over stat screens
+bool isDSOMenu = false; // to check if we are in the DSO menu or not
 
 static const int RXPin = 13, TXPin = 12; // set up all the GPS stuff
-static const uint32_t GPSBaud = 9600;
-int gpsSetCheck = 0;
+static const uint32_t GPSBaud = 9600; // this is arbitrary
+int gpsSetCheck = 0; // to prevent the code from looping into the chunk that sets the star to polaris and does the calculations for that star every loop
+
+// for keeping track of date and time
 int year;
 int month;
 int day;
@@ -53,6 +56,8 @@ int second;
 
 // SSD1306 stuff
 SAppMenu menu;
+SAppMenu dsoMenu;
+
 const char *menuItems[] = { // menu for planetary bodies, DSOs takes you to a second menu
   "Mercury",
   "Venus",
@@ -76,7 +81,7 @@ const char *dsoMenuItems[] = { //for the various DSOs, will have the ability to 
   "Others",
   "Back",
 };
-
+// end SSD1306 stuff
 
 
 // init the keypad, this is from a keypad.h example
@@ -121,6 +126,7 @@ void setup() {
   delay(500);
 
   ssd1306_createMenu( &menu, menuItems, sizeof(menuItems) / sizeof(char *) ); // create the intial menu
+  ssd1306_createMenu( &dsoMenu, dsoMenuItems, sizeof(dsoMenuItems) / sizeof(char *) ); // create DSO menu
   // ssd1306_showMenu(&menu);
 
 
@@ -195,8 +201,11 @@ void loop() {
     }
   }
 
-  if (menuCheck != 1){
+  if (menuCheck != 1 and isDSOMenu == false){
     ssd1306_showMenu(&menu); // update the menu every loop, if not explicitly being told to not
+  }
+  if (isDSOMenu == true){
+    ssd1306_showMenu(&dsoMenu);
   }
 
   if (menuCheck == 1){
@@ -205,64 +214,114 @@ void loop() {
 
   if (key == 'C'){ //bring the menu up 1 selection
     ssd1306_clearScreen();
-    ssd1306_menuUp(&menu);
+    if (isDSOMenu){ 
+      ssd1306_menuUp(&dsoMenu);
+    }
+    if (!isDSOMenu){
+      ssd1306_menuUp(&menu);
+    }
+
     Serial.println(key);
   }
 
   if (key == 'D'){ // bring the menu down 1 selection
     ssd1306_clearScreen();
-    ssd1306_menuDown(&menu);
+    if (isDSOMenu){
+      ssd1306_menuDown(&dsoMenu);
+    }
+    if (!isDSOMenu){
+      ssd1306_menuDown(&menu);
+    }
     Serial.println(key);
   }
 
-  if (key == '0'){ // select current selection
+  if (key == '0' && (isDSOMenu == false)){ // select current selection
     ssd1306_updateMenu(&menu);
     Serial.println(key);
     switch (ssd1306_menuSelection(&menu)){ // switch statement for each planet, contents should be roughly the same so I have documented only the first case
+
       case 0:
-        // calculate where mercury is in the sky // freezes here for some reason
-        planet.doMercury();
-        planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
-        Serial.println("Check 2");
-        objAngleAz = planet.getAzimuth(); // save az of the planet to a variable for later use
-        objAngleAlt = planet.getAltitude(); // save alt of planet to a variable for later use
-        
-        Serial.print(objAngleAlt); Serial.print("/"); Serial.println(objAngleAz); // print altaz to the serial
-        object = "Mercury";
-        menuCheck = 1; // make it so that the menu doesn't write itself again
-        calculateSteps(currentAngleAlt, objAngleAlt, dps, true); // calculate steps along the Y axis (Alt) that the telescope needs to move, and execute that command
-        calculateSteps(currentAngleAz, objAngleAz, dps, false); // calculate steps along the X axis (Az) that the telescope needs to move, and execute that command
+        planet.doMercury(); // calculate where mercury is in the sky
+        getPlanetAltAz(); // see function
         ssd1306_clearScreen();
+        object = "Mercury"; // set object name
+                            // yes, this does raise the error:
+                            // "ISO C++ forbids converting a string constant to 'char*"
+                            // but the code runs, so I'm not worried about it
+
+        menuCheck = 1; // make it so that the menu doesn't write itself again
         break;
 
       case 1:
         planet.doVenus();
+        getPlanetAltAz();
+        ssd1306_clearScreen();
+        object = "Venus";
+        menuCheck = 1;
         break;
 
       case 2:
         planet.doMoon();
+        getPlanetAltAz();
+        ssd1306_clearScreen();
+        object = "The Moon";
+        menuCheck = 1;
+        break;
+      
+      case 3:
+        planet.doMars();
+        getPlanetAltAz();
+        ssd1306_clearScreen();
+        object = "Mars";
+        menuCheck = 1;
         break;
 
       case 4:
         planet.doJupiter();
-        planet.doRAdec2AltAz();
-        objAngleAz = planet.getAzimuth();
-        objAngleAlt = planet.getAltitude();
-        Serial.print(objAngleAlt); Serial.print("/"); Serial.println(objAngleAz);
+        getPlanetAltAz();
         ssd1306_clearScreen();
-        ssd1306_printFixed(0, 8, "Jupiter", STYLE_NORMAL);
+        object = "Jupiter";
         menuCheck = 1;
-        calculateSteps(currentAngleAlt, objAngleAlt, dps, true);
-        calculateSteps(currentAngleAz, objAngleAz, dps, false);
+        break;
+
+      case 5:
+        planet.doSaturn();
+        getPlanetAltAz();
+        ssd1306_clearScreen();
+        object = "Saturn";
+        menuCheck = 1;
+        break;
+
+      case 6:
+        planet.doUranus();
+        getPlanetAltAz();
+        ssd1306_clearScreen();
+        object = "Uranus";
+        menuCheck = 1;
+        break;
+
+      case 7:
+        planet.doNeptune();
+        getPlanetAltAz();
+        ssd1306_clearScreen();
+        object = "Neptune";
+        menuCheck = 1;
+        break;
+
+      case 8: // TODO; add special DSO menu
+        isDSOMenu = true;
+        ssd1306_clearScreen();
+        ssd1306_showMenu(&dsoMenu);
         break;
 
       default:
         break;
     }
   }
-  if ((key == '*') && (menuCheck == 1)){ // go back in/to the menu
+  if ((key == '*') && ((menuCheck == 1) || (isDSOMenu == true))){ // go back in/to the menu
     ssd1306_clearScreen();
     menuCheck = 0; 
+    isDSOMenu = false;
   }
 }
 
@@ -273,12 +332,14 @@ void calculateSteps(float current, float desired, float degPerStep, bool isYDir)
     Serial.print("Steps to move Y: ");
     Serial.println(stepsToMove);
     writeCommand(stepsToMove, true, true);
+    float stepsY = stepsToMove; // created in case I need to access the number again
   }
 
   if (!isYDir) {  // send movement command for X along Serial
     Serial.print("Steps to move X: ");
     Serial.println(stepsToMove);
     writeCommand(stepsToMove, false, true);
+    float stepsX = stepsToMove;
   }
 }
 
@@ -341,12 +402,27 @@ void getDSOAltAz(int objNum, int table, double azReturn, double altReturn) { // 
 }
 
 void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi, int s, float alt, float az){ // selectedObject is the selected object, 
-                                                                                                              //y, m, d, are all the date,
-                                                                                                              //h, mi, s, are the time, 
-                                                                                                              //and alt/az is the altitude/azimuth
+                                                                                                              // y, m, d, are all the date,
+                                                                                                              // h, mi, s, are the time, 
+                                                                                                              // and alt/az is the altitude/azimuth
                                                                                                               
   ssd1306_printFixed(0, 8, selectedObject, STYLE_NORMAL); // print the name of whatever object we're looking at to the screen
-  ssd1306_printFixed(0, 16, (String(alt) + "/" + String(az)).c_str(), STYLE_NORMAL); // print the alt/az of the object we are looking at (remains static) to the screen
-  ssd1306_printFixed(0, 24, (String(h) + ":" + String(mi) + ":" + String(s)).c_str(), STYLE_NORMAL); // print time to the screen
-  ssd1306_printFixed(0, 32,  (String(y) + "/" + String(m) + "/" + String(d)).c_str(), STYLE_NORMAL); // print the date to the screen 
+  ssd1306_printFixed(0, 16, (String(alt, 3) + "/" + String(az, 3)).c_str(), STYLE_NORMAL); // print the alt/az of the object we are looking at (remains static) to the screen
+  ssd1306_printFixed(0, 24, (String(h) + ":" + String(mi) + ":" + String(s) + "  time in GMT").c_str(), STYLE_NORMAL); // print time to the screen
+  ssd1306_printFixed(0, 32,  (String(y) + "/" + String(m) + "/" + String(d) + "  GMT date").c_str(), STYLE_NORMAL); // print the date to the screen 
+}
+
+void getPlanetAltAz(){
+
+  planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
+  objAngleAz = planet.getAzimuth(); // save az of the planet to a variable for later use
+  objAngleAlt = planet.getAltitude(); // save alt of planet to a variable for later use 
+
+  Serial.print(objAngleAlt); Serial.print("/"); Serial.println(objAngleAz); // print altaz to the serial
+
+  calculateSteps(currentAngleAlt, objAngleAlt, dps, true); // calculate steps along the Y axis (Alt) that the telescope needs to move, and execute that command
+  calculateSteps(currentAngleAz, objAngleAz, dps, false); // calculate steps along the X axis (Az) that the telescope needs to move, and execute that command
+
+  currentAngleAlt = objAngleAlt; //update current alt to the alt of the object you are now pointed at
+  currentAngleAz = objAngleAz; // update current az to the az of the object you are now pointed at
 }
