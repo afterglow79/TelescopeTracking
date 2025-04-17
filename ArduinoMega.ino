@@ -41,6 +41,7 @@ char *object; // to print to scrteen what object we are looking at
 
 int menuCheck = 0; // to not draw a menu over stat screens
 bool isDSOMenu = false; // to check if we are in the DSO menu or not
+bool dsoInput = false;
 
 static const int RXPin = 13, TXPin = 12; // set up all the GPS stuff
 static const uint32_t GPSBaud = 9600; // this is arbitrary
@@ -57,6 +58,8 @@ int second;
 // SSD1306 stuff
 SAppMenu menu;
 SAppMenu dsoMenu;
+int dsoTable;
+bool dsoCheck;
 
 const char *menuItems[] = { // menu for planetary bodies, DSOs takes you to a second menu
   "Mercury",
@@ -204,12 +207,13 @@ void loop() {
   if (menuCheck != 1 and isDSOMenu == false){
     ssd1306_showMenu(&menu); // update the menu every loop, if not explicitly being told to not
   }
-  if (isDSOMenu == true){
+
+  if (menuCheck != 1 && isDSOMenu == true){
     ssd1306_showMenu(&dsoMenu);
   }
 
   if (menuCheck == 1){
-    updateScreenStats(object, year, month, day, hour, minute, second, objAngleAlt, objAngleAz); // update the screen with a bunch of stats, see the function for more info
+    updateScreenStats(object, year, month, day, hour, minute, second, objAngleAlt, objAngleAz, dsoCheck); // update the screen with a bunch of stats, see the function for more info
   }
 
   if (key == 'C'){ //bring the menu up 1 selection
@@ -235,12 +239,13 @@ void loop() {
     Serial.println(key);
   }
 
-  if (key == '0' && (isDSOMenu == false)){ // select current selection
+  if (key == '0' && (!isDSOMenu && (menuCheck != 1))){ // select current selection
     ssd1306_updateMenu(&menu);
     Serial.println(key);
     switch (ssd1306_menuSelection(&menu)){ // switch statement for each planet, contents should be roughly the same so I have documented only the first case
 
-      case 0:
+      case 0: // for some reason, this can crash the program sometimes and make everything freeze.
+              // I'm not sure why, but it does happen
         planet.doMercury(); // calculate where mercury is in the sky
         getPlanetAltAz(); // see function
         ssd1306_clearScreen();
@@ -308,7 +313,7 @@ void loop() {
         menuCheck = 1;
         break;
 
-      case 8: // TODO; add special DSO menu
+      case 8: 
         isDSOMenu = true;
         ssd1306_clearScreen();
         ssd1306_showMenu(&dsoMenu);
@@ -317,11 +322,78 @@ void loop() {
       default:
         break;
     }
+
   }
+
+  if (key == '0' && isDSOMenu){
+    ssd1306_updateMenu( &dsoMenu );
+    Serial.println(key);
+    
+    switch (ssd1306_menuSelection( &dsoMenu )){
+
+      case 1:
+        inputDSO(1);
+
+        ssd1306_clearScreen();
+        menuCheck == 1;
+        break;
+
+      case 2:
+        inputDSO(2);
+        
+        ssd1306_clearScreen();
+        menuCheck == 1;
+        break;
+      
+      case 3:
+        inputDSO(3);
+                
+        ssd1306_clearScreen();
+        menuCheck == 1;
+        break;
+        
+      case 4:
+        inputDSO(4);
+                
+        ssd1306_clearScreen();
+        menuCheck == 1;
+        break;
+         
+      case 5:
+        inputDSO(5);
+                
+        ssd1306_clearScreen();
+        menuCheck == 1;
+        break;
+         
+      case 6:
+        inputDSO(6);
+                
+        ssd1306_clearScreen();
+        menuCheck == 1;
+        break;
+        
+      case 7:
+        inputDSO(7);
+                
+        ssd1306_clearScreen();
+        menuCheck == 1;
+        break;
+        
+        
+    }
+  }
+
   if ((key == '*') && ((menuCheck == 1) || (isDSOMenu == true))){ // go back in/to the menu
     ssd1306_clearScreen();
-    menuCheck = 0; 
-    isDSOMenu = false;
+    
+    if (!dsoCheck){
+      menuCheck = 0; 
+    }
+    
+    if (dsoCheck){
+      isDSOMenu = false;
+      }
   }
 }
 
@@ -331,14 +403,14 @@ void calculateSteps(float current, float desired, float degPerStep, bool isYDir)
   if (isYDir) {  // send movement command for Y along Serial
     Serial.print("Steps to move Y: ");
     Serial.println(stepsToMove);
-    writeCommand(stepsToMove, true, true);
+    writeCommand(stepsToMove, true, false);
     float stepsY = stepsToMove; // created in case I need to access the number again
   }
 
   if (!isYDir) {  // send movement command for X along Serial
     Serial.print("Steps to move X: ");
     Serial.println(stepsToMove);
-    writeCommand(stepsToMove, false, true);
+    writeCommand(stepsToMove, false, false);
     float stepsX = stepsToMove;
   }
 }
@@ -367,7 +439,7 @@ void writeCommand(int steps, bool isY, bool writeToRegularSerial) {  // amount o
 
 void getDSOAltAz(int objNum, int table, double azReturn, double altReturn) { // input a table number and an object number to get out the altaz coordinates
                                                                              // exists to easily get the coordinates of DSOs, which is in of itself needlessly convoluted
-
+  dsoTable = table;
   switch (table){ // see printable packet (objects.pdf) for a list of all objects and their respective table/object number
     case 1:
       myAstro.selectStarTable(objNum); // select object x in the star table
@@ -399,9 +471,11 @@ void getDSOAltAz(int objNum, int table, double azReturn, double altReturn) { // 
   planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
   azReturn = planet.getAzimuth(); // save object azimuth to a variable
   altReturn = planet.getAltitude(); // save object altitude to a variable
+
+  dsoCheck = true;
 }
 
-void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi, int s, float alt, float az){ // selectedObject is the selected object, 
+void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi, int s, float alt, float az, bool isDSO){ // selectedObject is the selected object, 
                                                                                                               // y, m, d, are all the date,
                                                                                                               // h, mi, s, are the time, 
                                                                                                               // and alt/az is the altitude/azimuth
@@ -409,7 +483,43 @@ void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi,
   ssd1306_printFixed(0, 8, selectedObject, STYLE_NORMAL); // print the name of whatever object we're looking at to the screen
   ssd1306_printFixed(0, 16, (String(alt, 3) + "/" + String(az, 3)).c_str(), STYLE_NORMAL); // print the alt/az of the object we are looking at (remains static) to the screen
   ssd1306_printFixed(0, 24, (String(h) + ":" + String(mi) + ":" + String(s) + "  time in GMT").c_str(), STYLE_NORMAL); // print time to the screen
-  ssd1306_printFixed(0, 32,  (String(y) + "/" + String(m) + "/" + String(d) + "  GMT date").c_str(), STYLE_NORMAL); // print the date to the screen 
+  ssd1306_printFixed(0, 32,  (String(y) + "/" + String(m) + "/" + String(d) + "  GMT date").c_str(), STYLE_NORMAL); // print the date to the screen
+
+  if (isDSO){
+    switch (dsoTable){ // print the type of object at the bottom of screen if DSO
+      case 1:
+        ssd1306_printFixed(0, 40, "Star", STYLE_NORMAL);
+        break;
+
+      case 2:
+        ssd1306_printFixed(0, 40, "Messier", STYLE_NORMAL);
+        break;
+      
+      case 3:
+        ssd1306_printFixed(0, 40, "Caldwell", STYLE_NORMAL);
+        break;
+
+      case 4:
+        ssd1306_printFixed(0, 40, "Hershel 400", STYLE_NORMAL);
+        break;
+
+      case 5:
+        ssd1306_printFixed(0, 40, "NGC", STYLE_NORMAL);
+        break;
+
+      case 6:
+        ssd1306_printFixed(0, 40, "IC", STYLE_NORMAL);
+        break;
+
+      case 7:
+        ssd1306_printFixed(0, 40, "Other", STYLE_NORMAL);
+        break;
+
+      default:
+        break;
+
+    }
+  }
 }
 
 void getPlanetAltAz(){
@@ -425,4 +535,38 @@ void getPlanetAltAz(){
 
   currentAngleAlt = objAngleAlt; //update current alt to the alt of the object you are now pointed at
   currentAngleAz = objAngleAz; // update current az to the az of the object you are now pointed at
+
+
+}
+
+void inputDSO(int selectedTable){
+
+  dsoInput = true;
+  String str;
+  int count;
+
+  while (dsoInput){
+    char key = keypad.getKey(); // get key pressed
+
+    if (key){
+      Serial.println(key);
+      if ((key != '*') && (key != '#') && (key != 'A') && (key != 'B') && (key != 'C') && (key != 'D')){ //only allow number inputs
+        str += key; // update string with number pressed
+        Serial.println(str);
+        delay(100);
+        ssd1306_clearScreen();
+        count++;
+        ssd1306_printFixed(((128 - (6 * count))/2), 32, str.c_str(), STYLE_NORMAL); // show on screen what number has been types
+      }
+
+      if (key == '#'){
+        ssd1306_clearScreen();
+        Serial.println(atoi(str.c_str()));
+        getDSOAltAz(atoi(str.c_str()), selectedTable, objAngleAz, objAngleAlt); // see function
+        dsoInput == false; // break out of loop
+        object = str.c_str(); // update object name with the number input
+
+      }
+    }
+  }
 }
