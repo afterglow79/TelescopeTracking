@@ -212,7 +212,7 @@ void loop() {
     ssd1306_showMenu(&dsoMenu);
   }
 
-  if (menuCheck == 1){
+  if (menuCheck == 1 || dsoCheck){
     updateScreenStats(object, year, month, day, hour, minute, second, objAngleAlt, objAngleAz, dsoCheck); // update the screen with a bunch of stats, see the function for more info
   }
 
@@ -332,52 +332,52 @@ void loop() {
     switch (ssd1306_menuSelection( &dsoMenu )){
 
       case 1:
+        menuCheck = 1;
         inputDSO(1);
-
         ssd1306_clearScreen();
-        menuCheck == 1;
+        
         break;
 
       case 2:
+        menuCheck = 1;
         inputDSO(2);
-        
         ssd1306_clearScreen();
-        menuCheck == 1;
+        
         break;
       
       case 3:
         inputDSO(3);
                 
         ssd1306_clearScreen();
-        menuCheck == 1;
+        menuCheck = 1;
         break;
         
       case 4:
         inputDSO(4);
                 
         ssd1306_clearScreen();
-        menuCheck == 1;
+        menuCheck = 1;
         break;
          
       case 5:
         inputDSO(5);
                 
         ssd1306_clearScreen();
-        menuCheck == 1;
+        menuCheck = 1;
         break;
          
       case 6:
         inputDSO(6);
                 
         ssd1306_clearScreen();
-        menuCheck == 1;
+        menuCheck = 1;
         break;
         
       case 7:
         inputDSO(7);
                 
         ssd1306_clearScreen();
-        menuCheck == 1;
+        menuCheck = 1;
         break;
         
         
@@ -437,9 +437,10 @@ void writeCommand(int steps, bool isY, bool writeToRegularSerial) {  // amount o
   }
 }
 
-void getDSOAltAz(int objNum, int table, double azReturn, double altReturn) { // input a table number and an object number to get out the altaz coordinates
+void getDSOAltAz(int objNum, int table, float azReturn, float altReturn) { // input a table number and an object number to get out the altaz coordinates
                                                                              // exists to easily get the coordinates of DSOs, which is in of itself needlessly convoluted
   dsoTable = table;
+
   switch (table){ // see printable packet (objects.pdf) for a list of all objects and their respective table/object number
     case 1:
       myAstro.selectStarTable(objNum); // select object x in the star table
@@ -461,17 +462,20 @@ void getDSOAltAz(int objNum, int table, double azReturn, double altReturn) { // 
     case 7:
       myAstro.selectOtherObjectsTable(objNum); // select object x in the "Others" table
       break;
+
+    default:
+      break;
   }
 
   double objRA = myAstro.getRAdec(); // get RA of selected object
   double objDec = myAstro.getDeclinationDec(); // get Dec of selected object
+
 
   planet.setRAdec(objRA, objDec); // set RA/Dec of SiderealPlanets to that of the object
   planet.doPrecessFrom2000(); // calculate how the object has moved since 2000, basically where it is in the sky currently
   planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
   azReturn = planet.getAzimuth(); // save object azimuth to a variable
   altReturn = planet.getAltitude(); // save object altitude to a variable
-
   dsoCheck = true;
 }
 
@@ -479,12 +483,13 @@ void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi,
                                                                                                               // y, m, d, are all the date,
                                                                                                               // h, mi, s, are the time, 
                                                                                                               // and alt/az is the altitude/azimuth
-                                                                                                              
+
+  Serial.println("a");                                                                                                
   ssd1306_printFixed(0, 8, selectedObject, STYLE_NORMAL); // print the name of whatever object we're looking at to the screen
   ssd1306_printFixed(0, 16, (String(alt, 3) + "/" + String(az, 3)).c_str(), STYLE_NORMAL); // print the alt/az of the object we are looking at (remains static) to the screen
   ssd1306_printFixed(0, 24, (String(h) + ":" + String(mi) + ":" + String(s) + "  time in GMT").c_str(), STYLE_NORMAL); // print time to the screen
   ssd1306_printFixed(0, 32,  (String(y) + "/" + String(m) + "/" + String(d) + "  GMT date").c_str(), STYLE_NORMAL); // print the date to the screen
-
+  Serial.println("b");
   if (isDSO){
     switch (dsoTable){ // print the type of object at the bottom of screen if DSO
       case 1:
@@ -519,6 +524,7 @@ void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi,
         break;
 
     }
+    Serial.println("c");
   }
 }
 
@@ -562,9 +568,10 @@ void inputDSO(int selectedTable){
       if (key == '#'){
         ssd1306_clearScreen();
         Serial.println(atoi(str.c_str()));
-        getDSOAltAz(atoi(str.c_str()), selectedTable, objAngleAz, objAngleAlt); // see function
+        getDSOAltAz(atoi(str.c_str()), selectedTable, objAngleAz, objAngleAlt); // see function // code freezes here
         dsoInput == false; // break out of loop
         object = str.c_str(); // update object name with the number input
+        dsoCheck = 1;
 
       }
     }
