@@ -37,6 +37,9 @@ char objAlt[6];
 float dps = 0.225;  // degrees per step of the motor
                     // w/ this, 90 degrees is 400 steps
 
+int starNum;
+bool waitingToStart = true;
+
 char *object; // to print to scrteen what object we are looking at
 
 int menuCheck = 0; // to not draw a menu over stat screens
@@ -58,6 +61,7 @@ int second;
 // SSD1306 stuff
 SAppMenu menu;
 SAppMenu dsoMenu;
+SAppMenu startPicker;
 int dsoTable;
 bool dsoCheck;
 
@@ -83,6 +87,12 @@ const char *dsoMenuItems[] = { //for the various DSOs, will have the ability to 
   "ICs",
   "Others",
   "Back",
+};
+
+const char *startOptions[] = {
+  "Polaris",
+  "Castor", // shinjiro no way
+  "Pollux"
 };
 // end SSD1306 stuff
 
@@ -130,9 +140,39 @@ void setup() {
 
   ssd1306_createMenu( &menu, menuItems, sizeof(menuItems) / sizeof(char *) ); // create the intial menu
   ssd1306_createMenu( &dsoMenu, dsoMenuItems, sizeof(dsoMenuItems) / sizeof(char *) ); // create DSO menu
-  // ssd1306_showMenu(&menu);
+  ssd1306_createMenu( &startPicker, startOptions, sizeof(startOptions) / sizeof(char *));
 
 
+  while(waitingToStart){ // allow the user to pick a star to point at
+    char key = keypad.getKey();
+    ssd1306_showMenu( &startPicker );
+    if (key){
+      Serial.println(key);
+      if (key == 'D'){
+        ssd1306_menuDown( &startPicker ); //bring menu up
+      }
+      if (key == 'C'){
+        ssd1306_menuUp( &startPicker ); // bring menu down
+      }
+      if (key == '0'){ // select star
+        ssd1306_updateMenu( &startPicker);
+        waitingToStart = false;
+        
+        switch (ssd1306_menuSelection( &startPicker)){
+          case 0:
+            starNum = 49;
+            break;
+          case 1:
+            starNum = 188;
+            break;
+          case 2:
+            starNum = 196;
+            break;
+        }
+      }
+    }
+  }
+  Serial.println(starNum);
 }
 
 void loop() {
@@ -160,7 +200,7 @@ void loop() {
               Serial.println(gps.location.lat(), 4); // print lat to the 4th decimal
               Serial.println(gps.location.lng(), 4); // print lng to the 4th decimal
               Serial.println();
-              myAstro.selectStarTable(49); // set polaris as the selected star
+              myAstro.selectStarTable(starNum); // set the star selected earlier as the selected star
 
               // double initObjectRA = (myAstro.getRAdec());
               // double initObjectDec = (myAstro.getDeclinationDec());
@@ -208,11 +248,11 @@ void loop() {
     ssd1306_showMenu(&menu); // update the menu every loop, if not explicitly being told to not
   }
 
-  if (menuCheck != 1 && isDSOMenu == true){
+  if (menuCheck != 1 && isDSOMenu){
     ssd1306_showMenu(&dsoMenu);
   }
 
-  if (menuCheck == 1 || dsoCheck){
+  if (menuCheck == 1 || dsoCheck){ // code freezes here if in DSO menu
     updateScreenStats(object, year, month, day, hour, minute, second, objAngleAlt, objAngleAz, dsoCheck); // update the screen with a bunch of stats, see the function for more info
   }
 
@@ -331,27 +371,34 @@ void loop() {
     
     switch (ssd1306_menuSelection( &dsoMenu )){
 
+      case 0:
+        menuCheck = 1;
+        inputDSO(0);
+        ssd1306_clearScreen();
+        
+        break;
+
       case 1:
         menuCheck = 1;
         inputDSO(1);
         ssd1306_clearScreen();
         
         break;
-
-      case 2:
-        menuCheck = 1;
-        inputDSO(2);
-        ssd1306_clearScreen();
-        
-        break;
       
+      case 2:
+        inputDSO(2);
+                
+        ssd1306_clearScreen();
+        menuCheck = 1;
+        break;
+        
       case 3:
         inputDSO(3);
                 
         ssd1306_clearScreen();
         menuCheck = 1;
         break;
-        
+         
       case 4:
         inputDSO(4);
                 
@@ -365,16 +412,9 @@ void loop() {
         ssd1306_clearScreen();
         menuCheck = 1;
         break;
-         
+        
       case 6:
         inputDSO(6);
-                
-        ssd1306_clearScreen();
-        menuCheck = 1;
-        break;
-        
-      case 7:
-        inputDSO(7);
                 
         ssd1306_clearScreen();
         menuCheck = 1;
@@ -437,46 +477,51 @@ void writeCommand(int steps, bool isY, bool writeToRegularSerial) {  // amount o
   }
 }
 
-void getDSOAltAz(int objNum, int table, float azReturn, float altReturn) { // input a table number and an object number to get out the altaz coordinates
-                                                                             // exists to easily get the coordinates of DSOs, which is in of itself needlessly convoluted
+void getDSOAltAz(int objNum, int table) { // input a table number and an object number to get out the altaz coordinates
+                                                                           // exists to easily get the coordinates of DSOs, which is in of itself needlessly convoluted
+                                                                           // code freezes here, idk why
   dsoTable = table;
-
+  Serial.print("BEFORE SWITCH    "); // any print in this function is for debugging
   switch (table){ // see printable packet (objects.pdf) for a list of all objects and their respective table/object number
-    case 1:
+    case 0:
       myAstro.selectStarTable(objNum); // select object x in the star table
       break;
-    case 2:
+    case 1:
       myAstro.selectMessierTable(objNum); // select object x in the Messier table
       break;
-    case 3:
+    case 2:
       myAstro.selectCaldwellTable(objNum); // select object x in the Caldwell Table
-    case 4:
+    case 3:
       myAstro.selectHershel400Table(objNum); // select object x in the Hershel table
       break;
-    case 5:
+    case 4:
       myAstro.selectNGCTable(objNum); // select object x in the NGC table
       break;
-    case 6:
+    case 5:
       myAstro.selectICTable(objNum); // select object x in the IC table
       break;
-    case 7:
+    case 6:
       myAstro.selectOtherObjectsTable(objNum); // select object x in the "Others" table
       break;
-
-    default:
-      break;
   }
-
+  Serial.print("AFTER SWITCH     ");
   double objRA = myAstro.getRAdec(); // get RA of selected object
   double objDec = myAstro.getDeclinationDec(); // get Dec of selected object
 
 
   planet.setRAdec(objRA, objDec); // set RA/Dec of SiderealPlanets to that of the object
+  Serial.print("RADEC SET     ");
   planet.doPrecessFrom2000(); // calculate how the object has moved since 2000, basically where it is in the sky currently
+  Serial.print("PRECESS DONE     ");
   planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
-  azReturn = planet.getAzimuth(); // save object azimuth to a variable
-  altReturn = planet.getAltitude(); // save object altitude to a variable
+  Serial.print("RADEC TO ALTAZ DONE     ");
+  objAngleAz = planet.getAzimuth(); // save object azimuth to a variable
+  objAngleAlt = planet.getAltitude(); // save object altitude to a variable
   dsoCheck = true;
+  Serial.print("OBJ ALTAZ IS:     "); Serial.print(objAngleAlt); Serial.print("/"); Serial.print(objAngleAz); Serial.print("     ");
+  Serial.println("DSO ALTAZ SET... END OF FUNCTION.... CALCULATING STEPS");
+  calculateSteps(currentAngleAlt, objAngleAlt, dps, true);
+  calculateSteps(currentAngleAz, objAngleAz, dps, false);
 }
 
 void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi, int s, float alt, float az, bool isDSO){ // selectedObject is the selected object, 
@@ -539,9 +584,6 @@ void getPlanetAltAz(){
   calculateSteps(currentAngleAlt, objAngleAlt, dps, true); // calculate steps along the Y axis (Alt) that the telescope needs to move, and execute that command
   calculateSteps(currentAngleAz, objAngleAz, dps, false); // calculate steps along the X axis (Az) that the telescope needs to move, and execute that command
 
-  currentAngleAlt = objAngleAlt; //update current alt to the alt of the object you are now pointed at
-  currentAngleAz = objAngleAz; // update current az to the az of the object you are now pointed at
-
 
 }
 
@@ -550,6 +592,8 @@ void inputDSO(int selectedTable){
   dsoInput = true;
   String str;
   int count;
+  menuCheck = 1;
+  int obj;
 
   while (dsoInput){
     char key = keypad.getKey(); // get key pressed
@@ -563,14 +607,15 @@ void inputDSO(int selectedTable){
         ssd1306_clearScreen();
         count++;
         ssd1306_printFixed(((128 - (6 * count))/2), 32, str.c_str(), STYLE_NORMAL); // show on screen what number has been types
+        obj = atoi(str.c_str());
       }
 
       if (key == '#'){
         ssd1306_clearScreen();
-        Serial.println(atoi(str.c_str()));
-        getDSOAltAz(atoi(str.c_str()), selectedTable, objAngleAz, objAngleAlt); // see function // code freezes here
+        Serial.print(obj); Serial.println("     in input func"); // second print is for debugging
+        getDSOAltAz(obj, selectedTable); // see function // code freezes here, strangely
         dsoInput == false; // break out of loop
-        object = str.c_str(); // update object name with the number input
+        object = obj; // update object name with the number input
         dsoCheck = 1;
 
       }
