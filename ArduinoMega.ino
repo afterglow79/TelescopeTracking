@@ -19,6 +19,15 @@
 #include <ssd1306_uart.h>
 #include <SiderealPlanets.h>
 
+
+// SEE GITHUB FOR LICENSING INFORMATION || https://github.com/afterglow79/TelescopeTracking
+
+// This is a program that will make your telescope point at any given object in the sky. See objects.pdf in the github repo for the non-planetary bodies that are supported
+// REQUIRES an SSD1306 screen, a NEO-6M GPS unit (I have not tested if other units will work, but they may), a 4x4 keypad, 
+// an Arduino Mega with this code loaded onto it, an Arduino Uno with GRBL loaded onto it, a CNC Shield V3, and two stepper motors of whatever power is needed to drive your telescope vertically and horizontally
+// there are some variables that may need to be changed, for example dps, which should be the degrees per step of your motor combined with your gear.
+// I will make a full list up here later.
+
 // 160 steps at 20 mm/step to go 36 degrees, that is 160/36 = 4.444 deg per step, grbl can do 4.45 so that is what I will round to. Should be marginal.
 // 0.225 deg/step @ 20 mm/step
 
@@ -92,7 +101,8 @@ const char *dsoMenuItems[] = { //for the various DSOs, will have the ability to 
 const char *startOptions[] = {
   "Polaris",
   "Castor", // shinjiro no way
-  "Pollux"
+  "Pollux",
+  "The Moon"
 };
 // end SSD1306 stuff
 
@@ -168,11 +178,15 @@ void setup() {
           case 2:
             starNum = 196;
             break;
+          case 3:
+            starNum = -1;
+            break;
         }
       }
     }
   }
   Serial.println(starNum);
+  ssd1306_clearScreen();
 }
 
 void loop() {
@@ -200,16 +214,20 @@ void loop() {
               Serial.println(gps.location.lat(), 4); // print lat to the 4th decimal
               Serial.println(gps.location.lng(), 4); // print lng to the 4th decimal
               Serial.println();
-              myAstro.selectStarTable(starNum); // set the star selected earlier as the selected star
+              if (starNum != -1){ // if you didn't select the moon as the start point, do this
+                Serial.println(starNum);
+                myAstro.selectStarTable(starNum); // set the star selected earlier as the selected star
 
-              // double initObjectRA = (myAstro.getRAdec());
-              // double initObjectDec = (myAstro.getDeclinationDec());
+                // double initObjectRA = (myAstro.getRAdec());
+                // double initObjectDec = (myAstro.getDeclinationDec());
 
-              // planet.setRAdec(initObjectRA, initObjectDec);
-              planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec()); // set the RA/Dec that SiderealPlanets sees as the same as SiderealObjects
-            
-              planet.doPrecessFrom2000(); // calculate where Polaris is in our sky at the current date, time, and location
+                // planet.setRAdec(initObjectRA, initObjectDec);
+                planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec()); // set the RA/Dec that SiderealPlanets sees as the same as SiderealObjects
+              
+                planet.doPrecessFrom2000(); // calculate where Polaris is in our sky at the current date, time, and location
+              }
 
+              else{planet.doMoon(); Serial.println("moon");} // if you selected moon, print the moon
               planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
               startAlt = planet.getAltitude(); // set the starting altitude of the telescope
               startAz = planet.getAzimuth(); // set starting azimuth of the telescope
@@ -439,7 +457,7 @@ void loop() {
 
 void calculateSteps(float current, float desired, float degPerStep, bool isYDir) {
   float stepsToMove = (abs(current - desired) / degPerStep); // Calculate how many steps the motor needs to move given the gear ratio. 
-                                                              // Can be negated to move the motr the other direction
+                                                              // Can be negated to move the motor the other direction
   if (isYDir) {  // send movement command for Y along Serial
     Serial.print("Steps to move Y: ");
     Serial.println(stepsToMove);
@@ -449,12 +467,11 @@ void calculateSteps(float current, float desired, float degPerStep, bool isYDir)
 
   if (!isYDir) {  // send movement command for X along Serial
     Serial.print("Steps to move X: ");
-    Serial.println(stepsToMove);
-    writeCommand(stepsToMove, false, false);
+    Serial.println(-stepsToMove); // I negate it here because that is what GRBL needs to move left, whereas it generates a command to go right when I need it to go left.
+    writeCommand(-stepsToMove, false, false);
     float stepsX = stepsToMove;
   }
 }
-
 void writeCommand(int steps, bool isY, bool writeToRegularSerial) {  // amount of steps, if it is y direction or not, write to regular serial for debugging
   if (isY) {
     if (writeToRegularSerial) { // write the command of G0 y + amount of steps to regular serial, for debugging
