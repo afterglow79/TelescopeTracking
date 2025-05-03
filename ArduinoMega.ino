@@ -28,10 +28,12 @@
 // there are some variables that may need to be changed, for example dps, which should be the degrees per step of your motor combined with your gear.
 // I will make a full list up here later.
 
+// First working attempt 5/2/2025 m/d/y
+
 // 160 steps at 20 mm/step to go 36 degrees, that is 160/36 = 4.444 deg per step, grbl can do 4.45 so that is what I will round to. Should be marginal.
 // 0.225 deg/step @ 20 mm/step
 
-//In order to make the telescope track, you must first point it at Polaris, then select an object from the menu on the SSD1306 screen.
+//In order to make the telescope track, you must first point it at the object you selected to start at, then select a different object from the menu on the SSD1306 screen.
 
 float currentAngleAz;  // to keep track (roughly) of where we are pointed in the sky along Azimuth, will be updated as software runs
 float currentAngleAlt;  // same as above, but along Altitude
