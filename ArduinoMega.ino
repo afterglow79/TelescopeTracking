@@ -28,15 +28,21 @@
 // there are some variables that may need to be changed, for example dps, which should be the degrees per step of your motor combined with your gear.
 // I will make a full list up here later.
 
-// First working attempt 5/2/2025 m/d/y
-
-// 160 steps at 20 mm/step to go 36 degrees, that is 160/36 = 4.444 deg per step, grbl can do 4.45 so that is what I will round to. Should be marginal.
+// For the x motor, 160 steps at 20 mm/step to go 36 degrees, that is 160/36 = 4.444 deg per step, grbl can do 4.45 so that is what I will round to. Should be marginal.
 // 0.225 deg/step @ 20 mm/step
 
-//In order to make the telescope track, you must first point it at the object you selected to start at, then select a different object from the menu on the SSD1306 screen.
+// For the y motor, 1000 steps @ 20 mm/step to go 90 degrees, that is 1000/90 = 11.11..., grbl can do 11.1, so I will round to that. May be slightly more than marginal
+
+//In order to make the telescope track, you must first point it at whatever object you have selected, then select an object from the menu on the SSD1306 screen.
+
+//note to self cnc shield v3 wiring should go: RED BLUE GREEN BLACK
 
 float currentAngleAz;  // to keep track (roughly) of where we are pointed in the sky along Azimuth, will be updated as software runs
 float currentAngleAlt;  // same as above, but along Altitude
+
+float stepsTakenAlt;
+float stepsTakenAz; // used for calculating keypad movement
+
 
 float startAz;   // Start angle along Azimuth, will not be updated
 float startAlt;  // Start angle along Altitude, will not be updated
@@ -45,9 +51,9 @@ float objAngleAz;  // Azimuth of the object we are trying to look at
 float objAngleAlt;  // Altitude of the object we are trying to look at
 char objAz[6];
 char objAlt[6];
-float dps = 0.225;  // degrees per step of the motor
+float dpsX = 0.225;  // degrees per step of the motor
                     // w/ this, 90 degrees is 400 steps
-
+float dpsY = 0.0337;
 int starNum;
 bool waitingToStart = true;
 
@@ -104,6 +110,7 @@ const char *startOptions[] = {
   "Polaris",
   "Castor", // shinjiro no way
   "Pollux",
+  "Vega",
   "The Moon"
 };
 // end SSD1306 stuff
@@ -181,6 +188,9 @@ void setup() {
             starNum = 196;
             break;
           case 3:
+            starNum = 492;
+            break;
+          case 4:
             starNum = -1;
             break;
         }
@@ -189,13 +199,16 @@ void setup() {
   }
   Serial.println(starNum);
   ssd1306_clearScreen();
+  startUpTest();
 }
 
 void loop() {
   char key = keypad.getKey(); // get the pressed key of the keypad at the start of each loop
+  
   if (key){
     Serial.println(key);
   }
+  
   
   if ((gpsSetCheck != 1)){ // set all the important one-time values once and then never again. Does not account for if the clock rolls over to midnight, I believe
                            // also tells the software where polaris is in the sky, thusly where the telescope is pointed
@@ -455,22 +468,30 @@ void loop() {
       isDSOMenu = false;
       }
   }
+  
+  if (key == '5'){ // untested so far
+    menuCheck = 2;
+    keypadMovement();
+  }
 }
 
 void calculateSteps(float current, float desired, float degPerStep, bool isYDir) {
-  float stepsToMove = (abs(current - desired) / degPerStep); // Calculate how many steps the motor needs to move given the gear ratio. 
+  float stepsToMove = ((desired-current) / degPerStep); // Calculate how many steps the motor needs to move given the gear ratio. 
                                                               // Can be negated to move the motor the other direction
+   
   if (isYDir) {  // send movement command for Y along Serial
     Serial.print("Steps to move Y: ");
     Serial.println(stepsToMove);
     writeCommand(stepsToMove, true, false);
+    stepsTakenAlt = stepsTakenAlt + stepsToMove;
     float stepsY = stepsToMove; // created in case I need to access the number again
   }
 
   if (!isYDir) {  // send movement command for X along Serial
     Serial.print("Steps to move X: ");
-    Serial.println(-stepsToMove); // I negate it here because that is what GRBL needs to move left, whereas it generates a command to go right when I need it to go left.
+    Serial.println(-stepsToMove); // I negate it here because that is what GRBL needs to move left
     writeCommand(-stepsToMove, false, false);
+    stepsTakenAz = stepsTakenAz + stepsToMove;
     float stepsX = stepsToMove;
   }
 }
@@ -539,21 +560,20 @@ void getDSOAltAz(int objNum, int table) { // input a table number and an object 
   dsoCheck = true;
   Serial.print("OBJ ALTAZ IS:     "); Serial.print(objAngleAlt); Serial.print("/"); Serial.print(objAngleAz); Serial.print("     ");
   Serial.println("DSO ALTAZ SET... END OF FUNCTION.... CALCULATING STEPS");
-  calculateSteps(currentAngleAlt, objAngleAlt, dps, true);
-  calculateSteps(currentAngleAz, objAngleAz, dps, false);
+  calculateSteps(currentAngleAlt, objAngleAlt, dpsY, true);
+  calculateSteps(currentAngleAz, objAngleAz, dpsX, false);
 }
 
 void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi, int s, float alt, float az, bool isDSO){ // selectedObject is the selected object, 
                                                                                                               // y, m, d, are all the date,
                                                                                                               // h, mi, s, are the time, 
                                                                                                               // and alt/az is the altitude/azimuth
-
-  Serial.println("a");                                                                                                
+                                                                                               
   ssd1306_printFixed(0, 8, selectedObject, STYLE_NORMAL); // print the name of whatever object we're looking at to the screen
   ssd1306_printFixed(0, 16, (String(alt, 3) + "/" + String(az, 3)).c_str(), STYLE_NORMAL); // print the alt/az of the object we are looking at (remains static) to the screen
   ssd1306_printFixed(0, 24, (String(h) + ":" + String(mi) + ":" + String(s) + "  time in GMT").c_str(), STYLE_NORMAL); // print time to the screen
   ssd1306_printFixed(0, 32,  (String(y) + "/" + String(m) + "/" + String(d) + "  GMT date").c_str(), STYLE_NORMAL); // print the date to the screen
-  Serial.println("b");
+  
   if (isDSO){
     switch (dsoTable){ // print the type of object at the bottom of screen if DSO
       case 1:
@@ -600,8 +620,8 @@ void getPlanetAltAz(){
 
   Serial.print(objAngleAlt); Serial.print("/"); Serial.println(objAngleAz); // print altaz to the serial
 
-  calculateSteps(currentAngleAlt, objAngleAlt, dps, true); // calculate steps along the Y axis (Alt) that the telescope needs to move, and execute that command
-  calculateSteps(currentAngleAz, objAngleAz, dps, false); // calculate steps along the X axis (Az) that the telescope needs to move, and execute that command
+  calculateSteps(currentAngleAlt, objAngleAlt, dpsY, true); // calculate steps along the Y axis (Alt) that the telescope needs to move, and execute that command
+  calculateSteps(currentAngleAz, objAngleAz, dpsX, false); // calculate steps along the X axis (Az) that the telescope needs to move, and execute that command
 
 
 }
@@ -635,9 +655,112 @@ void inputDSO(int selectedTable){
         getDSOAltAz(obj, selectedTable); // see function // code freezes here, strangely
         dsoInput == false; // break out of loop
         object = obj; // update object name with the number input
-        dsoCheck = 1;
+        dsoCheck = 1; // make it true so we loop
 
       }
     }
   }
+}
+
+void startUpTest(){
+  Serial.println("Starting control test");
+  writeCommand(100, false, false);
+  writeCommand(100, true, true);
+  delay(100);
+  writeCommand(0, false, false);
+  writeCommand(0, true, true);
+}
+
+static void smartDelayMovement(unsigned long ms, char isX, int amount, int amount2, float degreesPerSec, float dps2){
+  unsigned long start = millis();
+  do
+  {
+    if(isX == 'x'){ // move along x
+      stepsTakenAz = stepsTakenAz + amount;
+      currentAngleAz = (stepsTakenAz / degreesPerSec) + startAz; 
+      Serial1.print("G01 x");
+      Serial1.print(stepsTakenAz);
+      Serial1.println("");
+      
+    }
+    else if(isX == 'y'){ // move along y
+      stepsTakenAlt = stepsTakenAlt + amount;
+      currentAngleAlt = (stepsTakenAlt / degreesPerSec) + startAlt;
+      Serial1.print("G01 y");
+      Serial1.print(stepsTakenAlt);
+      Serial1.println("");
+    }
+    else if(isX == 'z'){ // move along both x and y
+      stepsTakenAlt = stepsTakenAlt + amount;
+      currentAngleAlt = (stepsTakenAlt / degreesPerSec) + startAlt;
+      stepsTakenAz = stepsTakenAz + amount2;
+      currentAngleAz = (stepsTakenAz / dps2) + startAz; 
+
+      Serial1.print("G01 x");
+      Serial1.print(stepsTakenAz);
+      Serial1.println("");
+      Serial1.print("G01 y");
+      Serial1.print(stepsTakenAlt);
+      Serial1.println("");
+    }
+  } while (millis() - start < ms);
+  Serial.println(currentAngleAlt); Serial.println(currentAngleAz);
+  Serial.println("");
+  Serial.println(stepsTakenAlt); Serial.println(stepsTakenAz);
+}
+
+
+void keypadMovement(){
+  float speed = 50;
+  bool isFinished = false;
+  while(!isFinished){
+    char key = keypad.getKey();
+    if(key){
+      Serial.println(key);
+    }
+    if(key == '0'){
+      isFinished = true;
+    }
+
+    if (key == 'A'){
+      speed = 100;
+    }
+    if (key == 'B'){
+      speed = 50;
+    }
+    if (key == 'C'){
+      speed = 25;
+    }
+    if (key == 'D'){
+      speed = 1;
+    }
+    if (key == '1'){
+      smartDelayMovement(speed, 'z', 10, -1, dpsY, dpsX);
+    }
+    if (key == '2'){
+      smartDelayMovement(speed, 'y', 10, 0, dpsY, 0);
+    }
+    if (key == '3'){
+      smartDelayMovement(speed, 'z', 10, 1, dpsY, dpsX);
+    }
+    if (key == '4'){
+      smartDelayMovement(speed, 'x', -1, 0, dpsX, 0);
+    }
+    if (key == '5'){
+      //todo implement regular tracking or auto home
+    }
+    if (key == '6'){
+      smartDelayMovement(speed, 'x', 1, 0, dpsX, 0);
+    }
+    if (key == '7'){
+      smartDelayMovement(speed, 'z', -10, -1, dpsY, dpsX);
+    }
+    if (key == '8'){
+      smartDelayMovement(speed, 'y', -10, 0, dpsY, 0);
+    }
+    if (key == '9'){
+      smartDelayMovement(speed, 'z', -10, 1, dpsY, dpsX);
+    }
+  }
+  Serial.println("Exiting keypad movement...");
 }
