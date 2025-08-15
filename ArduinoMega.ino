@@ -40,7 +40,7 @@
 float currentAngleAz;  // to keep track (roughly) of where we are pointed in the sky along Azimuth, will be updated as software runs
 float currentAngleAlt;  // same as above, but along Altitude
 
-float stepsTakenAlt;
+float stepsTakenAlt;// used for calculating keypad movement
 float stepsTakenAz; // used for calculating keypad movement
 
 
@@ -51,9 +51,10 @@ float objAngleAz;  // Azimuth of the object we are trying to look at
 float objAngleAlt;  // Altitude of the object we are trying to look at
 char objAz[6];
 char objAlt[6];
-float dpsX = 0.225;  // degrees per step of the motor
+float dpsX = 0.225;  // degrees per step of the motor along the X axis
                     // w/ this, 90 degrees is 400 steps
-float dpsY = 0.0337;
+float dpsY = 0.0337; // degrees per step of the motor along the Y axis
+                     // w/ this, 90 degrees is 1000 steps
 int starNum;
 bool waitingToStart = true;
 
@@ -239,10 +240,10 @@ void loop() {
                 // planet.setRAdec(initObjectRA, initObjectDec);
                 planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec()); // set the RA/Dec that SiderealPlanets sees as the same as SiderealObjects
               
-                planet.doPrecessFrom2000(); // calculate where Polaris is in our sky at the current date, time, and location
+                planet.doPrecessFrom2000(); // calculate where the selected object is in our sky at the current date, time, and location
               }
 
-              else{planet.doMoon(); Serial.println("moon");} // if you selected moon, print the moon
+              else{planet.doMoon(); Serial.println("moon");} // if you selected moon, print the moon's coordinates
               planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
               startAlt = planet.getAltitude(); // set the starting altitude of the telescope
               startAz = planet.getAzimuth(); // set starting azimuth of the telescope
@@ -475,46 +476,23 @@ void loop() {
   }
 }
 
-void calculateSteps(float current, float desired, float degPerStep, bool isYDir) {
-  float stepsToMove = ((desired-current) / degPerStep); // Calculate how many steps the motor needs to move given the gear ratio. 
+void calculateSteps(float currentX, float desiredX, float currentY, float desiredY, float degPerStepX, float degPerStepY) {
+  float stepsToMoveX = ((desiredX-currentX) / degPerStepX); // Calculate how many steps the motor needs to move given the gear ratio. 
                                                               // Can be negated to move the motor the other direction
-   
+  float stepsToMoveY = ((desiredY-currentY) / degPerStepY);
   if (isYDir) {  // send movement command for Y along Serial
-    Serial.print("Steps to move Y: ");
-    Serial.println(stepsToMove);
-    writeCommand(stepsToMove, true, false);
-    stepsTakenAlt = stepsTakenAlt + stepsToMove;
-    float stepsY = stepsToMove; // created in case I need to access the number again
-  }
+  Serial.print("Steps to move X: "); Serial.print(stepsToMoveX); Serial.print("  Steps to move Y: "); Serial.println(stepsToMoveY)
+  stepsTakenAlt = stepsTakenAlt + stepsToMoveY;
+  stepsTakenAz = stepsTakenAz + stepsToMoveX;
+  writeCommand(stepsToMoveX, stepsToMoveY, true);
 
-  if (!isYDir) {  // send movement command for X along Serial
-    Serial.print("Steps to move X: ");
-    Serial.println(-stepsToMove); // I negate it here because that is what GRBL needs to move left
-    writeCommand(-stepsToMove, false, false);
-    stepsTakenAz = stepsTakenAz + stepsToMove;
-    float stepsX = stepsToMove;
-  }
 }
-void writeCommand(int steps, bool isY, bool writeToRegularSerial) {  // amount of steps, if it is y direction or not, write to regular serial for debugging
-  if (isY) {
-    if (writeToRegularSerial) { // write the command of G0 y + amount of steps to regular serial, for debugging
-      Serial.print("G0 y");
-      Serial.println(steps);
-    }
-
-    Serial1.print("G0 y"); // write the command of G0 y + amount of steps to serial1, moves telescope along alt
-    Serial1.println(steps);
+void writeCommand(float stepsX, float stepsY, bool writeToRegularSerial) {  // amount of steps, if it is y direction or not, write to regular serial for debugging
+  if (writeToRegularSerial) { // write the command of G0 y + amount of steps to regular serial, for debugging
+    Serial.print("G0 x"); Serial.print(stepsX); Serial.print(" y"); Serial.println(stepsY);
   }
+  Serial1.print("G0 x"); Serial1.print(stepsX); Serial1.print(" y"); Serial1.println(stepsY)
 
-  if (!isY) {
-    if (writeToRegularSerial) { // write the command of G0 x + amount of steps to regular serial, for debugging
-      Serial.print("G0 x");
-      Serial.println(steps);
-    }
-
-    Serial1.print("G0 x"); // write the command of G0 x + amount of steps to regular serial, moves telescope along az
-    Serial1.println(steps);
-  }
 }
 
 void getDSOAltAz(int objNum, int table) { // input a table number and an object number to get out the altaz coordinates
@@ -560,8 +538,7 @@ void getDSOAltAz(int objNum, int table) { // input a table number and an object 
   dsoCheck = true;
   Serial.print("OBJ ALTAZ IS:     "); Serial.print(objAngleAlt); Serial.print("/"); Serial.print(objAngleAz); Serial.print("     ");
   Serial.println("DSO ALTAZ SET... END OF FUNCTION.... CALCULATING STEPS");
-  calculateSteps(currentAngleAlt, objAngleAlt, dpsY, true);
-  calculateSteps(currentAngleAz, objAngleAz, dpsX, false);
+  calculateSteps(currentAngleAz, objAngleAz, currentAngleAlt, currentAngleAz, dpsX, dpsY);
 }
 
 void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi, int s, float alt, float az, bool isDSO){ // selectedObject is the selected object, 
@@ -620,8 +597,7 @@ void getPlanetAltAz(){
 
   Serial.print(objAngleAlt); Serial.print("/"); Serial.println(objAngleAz); // print altaz to the serial
 
-  calculateSteps(currentAngleAlt, objAngleAlt, dpsY, true); // calculate steps along the Y axis (Alt) that the telescope needs to move, and execute that command
-  calculateSteps(currentAngleAz, objAngleAz, dpsX, false); // calculate steps along the X axis (Az) that the telescope needs to move, and execute that command
+  calculateSteps(currentAngleAz, objAngleAz, currentAngleAlt, objAngleAlt dpsX, dpsY); // calculate steps along both axis that the telescope needs to move, and execute that command
 
 
 }
@@ -696,12 +672,11 @@ static void smartDelayMovement(unsigned long ms, char isX, int amount, int amoun
       stepsTakenAz = stepsTakenAz + amount2;
       currentAngleAz = (stepsTakenAz / dps2) + startAz; 
 
-      Serial1.print("G01 x");
+      Serial1.print("G0 x");
       Serial1.print(stepsTakenAz);
-      Serial1.println("");
-      Serial1.print("G01 y");
-      Serial1.print(stepsTakenAlt);
-      Serial1.println("");
+      Serial1.print(" y");
+      Serial1.println(stepsTakenAlt);
+
     }
   } while (millis() - start < ms);
   Serial.println(currentAngleAlt); Serial.println(currentAngleAz);
@@ -723,17 +698,18 @@ void keypadMovement(){
     }
 
     if (key == 'A'){
-      speed = 100;
+      speed = 500;
     }
     if (key == 'B'){
-      speed = 50;
+      speed = 100;
     }
     if (key == 'C'){
-      speed = 25;
+      speed = 50;
     }
     if (key == 'D'){
-      speed = 1;
+      speed = 10;
     }
+    
     if (key == '1'){
       smartDelayMovement(speed, 'z', 10, -1, dpsY, dpsX);
     }
