@@ -141,6 +141,175 @@ SiderealPlanets planet;
 TinyGPSPlus gps;
 SoftwareSerial ss(RXPin, TXPin);
 
+void calculateSteps(float currentX, float desiredX, float currentY, float desiredY, float degPerStepX, float degPerStepY) {
+  float stepsToMoveX = ((desiredX-currentX) / degPerStepX); // Calculate how many steps the motor needs to move given the gear ratio. 
+                                                              // Can be negated to move the motor the other direction
+  float stepsToMoveY = ((desiredY-currentY) / degPerStepY);
+  Serial.print("Steps to move X: "); Serial.print(stepsToMoveX); Serial.print("  Steps to move Y: "); Serial.println(stepsToMoveY);
+  stepsTakenAlt = stepsTakenAlt + stepsToMoveY;
+  stepsTakenAz = stepsTakenAz + stepsToMoveX;
+  writeCommand(stepsToMoveX, stepsToMoveY, true);
+
+  }
+
+static void smartDelayMovement(unsigned long ms, char isX, int amount, int amount2, float degreesPerSec, float dps2){
+  unsigned long start = millis();
+  do
+  {
+    if(isX == 'x'){ // move along x
+      stepsTakenAz = stepsTakenAz + amount;
+      currentAngleAz = (stepsTakenAz / degreesPerSec) + startAz; 
+      Serial1.print("G01 x");
+      Serial1.print(stepsTakenAz);
+      Serial1.println("");
+      
+    }
+    else if(isX == 'y'){ // move along y
+      stepsTakenAlt = stepsTakenAlt + amount;
+      currentAngleAlt = (stepsTakenAlt / degreesPerSec) + startAlt;
+      Serial1.print("G01 y");
+      Serial1.print(stepsTakenAlt);
+      Serial1.println("");
+    }
+    else if(isX == 'z'){ // move along both x and y
+      stepsTakenAlt = stepsTakenAlt + amount;
+      currentAngleAlt = (stepsTakenAlt / degreesPerSec) + startAlt;
+      stepsTakenAz = stepsTakenAz + amount2;
+      currentAngleAz = (stepsTakenAz / dps2) + startAz; 
+
+      Serial1.print("G0 x");
+      Serial1.print(stepsTakenAz);
+      Serial1.print(" y");
+      Serial1.println(stepsTakenAlt);
+
+    }
+  } while (millis() - start < ms);
+  Serial.println(currentAngleAlt); Serial.println(currentAngleAz);
+  Serial.println("");
+  Serial.println(stepsTakenAlt); Serial.println(stepsTakenAz);
+}
+
+void getPlanetAltAz(){
+
+  planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
+  objAngleAz = planet.getAzimuth(); // save az of the planet to a variable for later use
+  objAngleAlt = planet.getAltitude(); // save alt of planet to a variable for later use 
+
+  Serial.print(objAngleAlt); Serial.print("/"); Serial.println(objAngleAz); // print altaz to the serial
+
+  calculateSteps(currentAngleAz, objAngleAz, currentAngleAlt, objAngleAlt, dpsX, dpsY); // calculate steps along both axis that the telescope needs to move, and execute that command
+
+
+}
+
+void writeCommand(float stepsX, float stepsY, bool writeToRegularSerial) {  // amount of steps, if it is y direction or not, write to regular serial for debugging
+  if (writeToRegularSerial) { // write the command of G0 y + amount of steps to regular serial, for debugging
+    Serial.print("G0 x"); Serial.print(stepsX); Serial.print(" y"); Serial.println(stepsY);
+  }
+  Serial1.print("G0 x"); Serial1.print(stepsX); Serial1.print(" y"); Serial1.println(stepsY);
+}
+
+void startUpTest(){
+  Serial.println("Starting control test");
+  writeCommand(100, false, false);
+  writeCommand(100, true, true);
+  delay(100);
+  writeCommand(0, false, false);
+  writeCommand(0, true, true);
+}
+
+void keypadMovement(){
+  float speed = 50;
+  bool isFinished = false;
+  while(!isFinished){
+    char key = keypad.getKey();
+    if(key){
+      Serial.println(key);
+    }
+    if(key == '0'){
+      isFinished = true;
+    }
+
+    if (key == 'A'){
+      speed = 500;
+    }
+    if (key == 'B'){
+      speed = 100;
+    }
+    if (key == 'C'){
+      speed = 50;
+    }
+    if (key == 'D'){
+      speed = 10;
+    }
+    
+    if (key == '1'){
+      smartDelayMovement(speed, 'z', 10, -1, dpsY, dpsX);
+    }
+    if (key == '2'){
+      smartDelayMovement(speed, 'y', 10, 0, dpsY, 0);
+    }
+    if (key == '3'){
+      smartDelayMovement(speed, 'z', 10, 1, dpsY, dpsX);
+    }
+    if (key == '4'){
+      smartDelayMovement(speed, 'x', -1, 0, dpsX, 0);
+    }
+    if (key == '5'){
+      //todo implement regular tracking or auto home
+    }
+    if (key == '6'){
+      smartDelayMovement(speed, 'x', 1, 0, dpsX, 0);
+    }
+    if (key == '7'){
+      smartDelayMovement(speed, 'z', -10, -1, dpsY, dpsX);
+    }
+    if (key == '8'){
+      smartDelayMovement(speed, 'y', -10, 0, dpsY, 0);
+    }
+    if (key == '9'){
+      smartDelayMovement(speed, 'z', -10, 1, dpsY, dpsX);
+    }
+  }
+  Serial.println("Exiting keypad movement...");
+}
+
+void inputDSO(int selectedTable){
+
+  dsoInput = true;
+  String str;
+  int count;
+  menuCheck = 1;
+  int obj;
+
+  while (dsoInput){
+    char key = keypad.getKey(); // get key pressed
+
+    if (key){
+      Serial.println(key);
+      if ((key != '*') && (key != '#') && (key != 'A') && (key != 'B') && (key != 'C') && (key != 'D')){ //only allow number inputs
+        str += key; // update string with number pressed
+        Serial.println(str);
+        delay(100);
+        ssd1306_clearScreen();
+        count++;
+        ssd1306_printFixed(((128 - (6 * count))/2), 32, str.c_str(), STYLE_NORMAL); // show on screen what number has been types
+        obj = atoi(str.c_str());
+      }
+
+      if (key == '#'){
+        ssd1306_clearScreen();
+        Serial.print(obj); Serial.println("     in input func"); // second print is for debugging
+        getDSOAltAz(obj, selectedTable); // see function // code freezes here, strangely
+        dsoInput == false; // break out of loop
+        object = obj; // update object name with the number input
+        dsoCheck = 1; // make it true so we loop
+
+      }
+    }
+  }
+}
+
 void setup() {
   Serial.begin(9600);   // begin regular serial for debugging
   Serial1.begin(9600);  // serial for transmissions
@@ -476,25 +645,6 @@ void loop() {
   }
 }
 
-void calculateSteps(float currentX, float desiredX, float currentY, float desiredY, float degPerStepX, float degPerStepY) {
-  float stepsToMoveX = ((desiredX-currentX) / degPerStepX); // Calculate how many steps the motor needs to move given the gear ratio. 
-                                                              // Can be negated to move the motor the other direction
-  float stepsToMoveY = ((desiredY-currentY) / degPerStepY);
-  if (isYDir) {  // send movement command for Y along Serial
-  Serial.print("Steps to move X: "); Serial.print(stepsToMoveX); Serial.print("  Steps to move Y: "); Serial.println(stepsToMoveY)
-  stepsTakenAlt = stepsTakenAlt + stepsToMoveY;
-  stepsTakenAz = stepsTakenAz + stepsToMoveX;
-  writeCommand(stepsToMoveX, stepsToMoveY, true);
-
-}
-void writeCommand(float stepsX, float stepsY, bool writeToRegularSerial) {  // amount of steps, if it is y direction or not, write to regular serial for debugging
-  if (writeToRegularSerial) { // write the command of G0 y + amount of steps to regular serial, for debugging
-    Serial.print("G0 x"); Serial.print(stepsX); Serial.print(" y"); Serial.println(stepsY);
-  }
-  Serial1.print("G0 x"); Serial1.print(stepsX); Serial1.print(" y"); Serial1.println(stepsY)
-
-}
-
 void getDSOAltAz(int objNum, int table) { // input a table number and an object number to get out the altaz coordinates
                                                                            // exists to easily get the coordinates of DSOs, which is in of itself needlessly convoluted
                                                                            // code freezes here, idk why
@@ -587,156 +737,4 @@ void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi,
     }
     Serial.println("c");
   }
-}
-
-void getPlanetAltAz(){
-
-  planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
-  objAngleAz = planet.getAzimuth(); // save az of the planet to a variable for later use
-  objAngleAlt = planet.getAltitude(); // save alt of planet to a variable for later use 
-
-  Serial.print(objAngleAlt); Serial.print("/"); Serial.println(objAngleAz); // print altaz to the serial
-
-  calculateSteps(currentAngleAz, objAngleAz, currentAngleAlt, objAngleAlt dpsX, dpsY); // calculate steps along both axis that the telescope needs to move, and execute that command
-
-
-}
-
-void inputDSO(int selectedTable){
-
-  dsoInput = true;
-  String str;
-  int count;
-  menuCheck = 1;
-  int obj;
-
-  while (dsoInput){
-    char key = keypad.getKey(); // get key pressed
-
-    if (key){
-      Serial.println(key);
-      if ((key != '*') && (key != '#') && (key != 'A') && (key != 'B') && (key != 'C') && (key != 'D')){ //only allow number inputs
-        str += key; // update string with number pressed
-        Serial.println(str);
-        delay(100);
-        ssd1306_clearScreen();
-        count++;
-        ssd1306_printFixed(((128 - (6 * count))/2), 32, str.c_str(), STYLE_NORMAL); // show on screen what number has been types
-        obj = atoi(str.c_str());
-      }
-
-      if (key == '#'){
-        ssd1306_clearScreen();
-        Serial.print(obj); Serial.println("     in input func"); // second print is for debugging
-        getDSOAltAz(obj, selectedTable); // see function // code freezes here, strangely
-        dsoInput == false; // break out of loop
-        object = obj; // update object name with the number input
-        dsoCheck = 1; // make it true so we loop
-
-      }
-    }
-  }
-}
-
-void startUpTest(){
-  Serial.println("Starting control test");
-  writeCommand(100, false, false);
-  writeCommand(100, true, true);
-  delay(100);
-  writeCommand(0, false, false);
-  writeCommand(0, true, true);
-}
-
-static void smartDelayMovement(unsigned long ms, char isX, int amount, int amount2, float degreesPerSec, float dps2){
-  unsigned long start = millis();
-  do
-  {
-    if(isX == 'x'){ // move along x
-      stepsTakenAz = stepsTakenAz + amount;
-      currentAngleAz = (stepsTakenAz / degreesPerSec) + startAz; 
-      Serial1.print("G01 x");
-      Serial1.print(stepsTakenAz);
-      Serial1.println("");
-      
-    }
-    else if(isX == 'y'){ // move along y
-      stepsTakenAlt = stepsTakenAlt + amount;
-      currentAngleAlt = (stepsTakenAlt / degreesPerSec) + startAlt;
-      Serial1.print("G01 y");
-      Serial1.print(stepsTakenAlt);
-      Serial1.println("");
-    }
-    else if(isX == 'z'){ // move along both x and y
-      stepsTakenAlt = stepsTakenAlt + amount;
-      currentAngleAlt = (stepsTakenAlt / degreesPerSec) + startAlt;
-      stepsTakenAz = stepsTakenAz + amount2;
-      currentAngleAz = (stepsTakenAz / dps2) + startAz; 
-
-      Serial1.print("G0 x");
-      Serial1.print(stepsTakenAz);
-      Serial1.print(" y");
-      Serial1.println(stepsTakenAlt);
-
-    }
-  } while (millis() - start < ms);
-  Serial.println(currentAngleAlt); Serial.println(currentAngleAz);
-  Serial.println("");
-  Serial.println(stepsTakenAlt); Serial.println(stepsTakenAz);
-}
-
-
-void keypadMovement(){
-  float speed = 50;
-  bool isFinished = false;
-  while(!isFinished){
-    char key = keypad.getKey();
-    if(key){
-      Serial.println(key);
-    }
-    if(key == '0'){
-      isFinished = true;
-    }
-
-    if (key == 'A'){
-      speed = 500;
-    }
-    if (key == 'B'){
-      speed = 100;
-    }
-    if (key == 'C'){
-      speed = 50;
-    }
-    if (key == 'D'){
-      speed = 10;
-    }
-    
-    if (key == '1'){
-      smartDelayMovement(speed, 'z', 10, -1, dpsY, dpsX);
-    }
-    if (key == '2'){
-      smartDelayMovement(speed, 'y', 10, 0, dpsY, 0);
-    }
-    if (key == '3'){
-      smartDelayMovement(speed, 'z', 10, 1, dpsY, dpsX);
-    }
-    if (key == '4'){
-      smartDelayMovement(speed, 'x', -1, 0, dpsX, 0);
-    }
-    if (key == '5'){
-      //todo implement regular tracking or auto home
-    }
-    if (key == '6'){
-      smartDelayMovement(speed, 'x', 1, 0, dpsX, 0);
-    }
-    if (key == '7'){
-      smartDelayMovement(speed, 'z', -10, -1, dpsY, dpsX);
-    }
-    if (key == '8'){
-      smartDelayMovement(speed, 'y', -10, 0, dpsY, 0);
-    }
-    if (key == '9'){
-      smartDelayMovement(speed, 'z', -10, 1, dpsY, dpsX);
-    }
-  }
-  Serial.println("Exiting keypad movement...");
 }
