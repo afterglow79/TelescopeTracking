@@ -141,6 +141,13 @@ SiderealPlanets planet;
 TinyGPSPlus gps;
 SoftwareSerial ss(RXPin, TXPin);
 
+void writeCommand(float stepsX, float stepsY, bool writeToRegularSerial) {  // amount of steps, if it is y direction or not, write to regular serial for debugging
+  if (writeToRegularSerial) { // write the command of G0 y + amount of steps to regular serial, for debugging
+    Serial.print("G0 x"); Serial.print(stepsX); Serial.print(" y"); Serial.println(stepsY);
+  }
+  Serial1.print("G0 x"); Serial1.print(stepsX); Serial1.print(" y"); Serial1.println(stepsY);
+}
+
 void calculateSteps(float currentX, float desiredX, float currentY, float desiredY, float degPerStepX, float degPerStepY) {
   float stepsToMoveX = ((desiredX-currentX) / degPerStepX); // Calculate how many steps the motor needs to move given the gear ratio. 
                                                               // Can be negated to move the motor the other direction
@@ -202,20 +209,11 @@ void getPlanetAltAz(){
 
 }
 
-void writeCommand(float stepsX, float stepsY, bool writeToRegularSerial) {  // amount of steps, if it is y direction or not, write to regular serial for debugging
-  if (writeToRegularSerial) { // write the command of G0 y + amount of steps to regular serial, for debugging
-    Serial.print("G0 x"); Serial.print(stepsX); Serial.print(" y"); Serial.println(stepsY);
-  }
-  Serial1.print("G0 x"); Serial1.print(stepsX); Serial1.print(" y"); Serial1.println(stepsY);
-}
-
 void startUpTest(){
   Serial.println("Starting control test");
-  writeCommand(100, false, false);
-  writeCommand(100, true, true);
+  writeCommand(100, 100, true);
   delay(100);
-  writeCommand(0, false, false);
-  writeCommand(0, true, true);
+  writeCommand(0, 0, true);
 }
 
 void keypadMovement(){
@@ -272,6 +270,100 @@ void keypadMovement(){
     }
   }
   Serial.println("Exiting keypad movement...");
+}
+
+void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi, int s, float alt, float az, bool isDSO){ // selectedObject is the selected object, 
+                                                                                                              // y, m, d, are all the date,
+                                                                                                              // h, mi, s, are the time, 
+                                                                                                              // and alt/az is the altitude/azimuth
+                                                                                               
+  ssd1306_printFixed(0, 8, selectedObject, STYLE_NORMAL); // print the name of whatever object we're looking at to the screen
+  ssd1306_printFixed(0, 16, (String(alt, 3) + "/" + String(az, 3)).c_str(), STYLE_NORMAL); // print the alt/az of the object we are looking at (remains static) to the screen
+  ssd1306_printFixed(0, 24, (String(h) + ":" + String(mi) + ":" + String(s) + "  time in GMT").c_str(), STYLE_NORMAL); // print time to the screen
+  ssd1306_printFixed(0, 32,  (String(y) + "/" + String(m) + "/" + String(d) + "  GMT date").c_str(), STYLE_NORMAL); // print the date to the screen
+  
+  if (isDSO){
+    switch (dsoTable){ // print the type of object at the bottom of screen if DSO
+      case 1:
+        ssd1306_printFixed(0, 40, "Star", STYLE_NORMAL);
+        break;
+
+      case 2:
+        ssd1306_printFixed(0, 40, "Messier", STYLE_NORMAL);
+        break;
+      
+      case 3:
+        ssd1306_printFixed(0, 40, "Caldwell", STYLE_NORMAL);
+        break;
+
+      case 4:
+        ssd1306_printFixed(0, 40, "Hershel 400", STYLE_NORMAL);
+        break;
+
+      case 5:
+        ssd1306_printFixed(0, 40, "NGC", STYLE_NORMAL);
+        break;
+
+      case 6:
+        ssd1306_printFixed(0, 40, "IC", STYLE_NORMAL);
+        break;
+
+      case 7:
+        ssd1306_printFixed(0, 40, "Other", STYLE_NORMAL);
+        break;
+
+      default:
+        break;
+
+    }
+    Serial.println("c");
+  }
+}
+
+void getDSOAltAz(int objNum, int table) { // input a table number and an object number to get out the altaz coordinates
+                                                                           // exists to easily get the coordinates of DSOs, which is in of itself needlessly convoluted
+                                                                           // code freezes here, idk why
+  dsoTable = table;
+  Serial.print("BEFORE SWITCH    "); // any print in this function is for debugging
+  switch (table){ // see printable packet (objects.pdf) for a list of all objects and their respective table/object number
+    case 0:
+      myAstro.selectStarTable(objNum); // select object x in the star table
+      break;
+    case 1:
+      myAstro.selectMessierTable(objNum); // select object x in the Messier table
+      break;
+    case 2:
+      myAstro.selectCaldwellTable(objNum); // select object x in the Caldwell Table
+    case 3:
+      myAstro.selectHershel400Table(objNum); // select object x in the Hershel table
+      break;
+    case 4:
+      myAstro.selectNGCTable(objNum); // select object x in the NGC table
+      break;
+    case 5:
+      myAstro.selectICTable(objNum); // select object x in the IC table
+      break;
+    case 6:
+      myAstro.selectOtherObjectsTable(objNum); // select object x in the "Others" table
+      break;
+  }
+  Serial.print("AFTER SWITCH     ");
+  double objRA = myAstro.getRAdec(); // get RA of selected object
+  double objDec = myAstro.getDeclinationDec(); // get Dec of selected object
+
+
+  planet.setRAdec(objRA, objDec); // set RA/Dec of SiderealPlanets to that of the object
+  Serial.print("RADEC SET     ");
+  planet.doPrecessFrom2000(); // calculate how the object has moved since 2000, basically where it is in the sky currently
+  Serial.print("PRECESS DONE     ");
+  planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
+  Serial.print("RADEC TO ALTAZ DONE     ");
+  objAngleAz = planet.getAzimuth(); // save object azimuth to a variable
+  objAngleAlt = planet.getAltitude(); // save object altitude to a variable
+  dsoCheck = true;
+  Serial.print("OBJ ALTAZ IS:     "); Serial.print(objAngleAlt); Serial.print("/"); Serial.print(objAngleAz); Serial.print("     ");
+  Serial.println("DSO ALTAZ SET... END OF FUNCTION.... CALCULATING STEPS");
+  calculateSteps(currentAngleAz, objAngleAz, currentAngleAlt, currentAngleAz, dpsX, dpsY);
 }
 
 void inputDSO(int selectedTable){
@@ -370,6 +462,7 @@ void setup() {
   Serial.println(starNum);
   ssd1306_clearScreen();
   startUpTest();
+  Serial.println("Looping now");
 }
 
 void loop() {
@@ -382,17 +475,22 @@ void loop() {
   
   if ((gpsSetCheck != 1)){ // set all the important one-time values once and then never again. Does not account for if the clock rolls over to midnight, I believe
                            // also tells the software where polaris is in the sky, thusly where the telescope is pointed
-
+    Serial.print("GPS SET = FALSE     ");
     while(ss.available() > 0){
+      Serial.print("SOFTWARE SERIAL AVAILABLE    ");
       gps.encode(ss.read());
-
+      Serial.print("GPS READ     ");
       if(gps.time.isUpdated()){
+        Serial.print("GPS TIME UPDATED     ");
         // Serial.println("Time updated"); // in case the arduino freezes, see roughly where it froze
         if(gps.time.isValid()){
+          Serial.print("GPS TIME IS VALID     ");
           // Serial.println("Time valid");
           if(gps.location.isValid()){
+            Serial.print("GPS LOCATION IS VALID     ");
             // Serial.println("Location valid");
             if(gps.date.isValid()){
+              Serial.println("GPS DATE IS VALID");
               planet.setLatLong(gps.location.lat(), gps.location.lng()); // set our lat/long in SiderealPlanets
               planet.setGMTtime(gps.time.hour(), gps.time.minute(), gps.time.second()); // set the time in SiderealPlanets
               planet.setGMTdate(gps.date.year(), gps.date.month(), gps.date.day()); // set the date in SiderealPlanets
@@ -461,24 +559,13 @@ void loop() {
 
   if (key == 'C'){ //bring the menu up 1 selection
     ssd1306_clearScreen();
-    if (isDSOMenu){ 
-      ssd1306_menuUp(&dsoMenu);
-    }
-    if (!isDSOMenu){
-      ssd1306_menuUp(&menu);
-    }
-
+    ssd1306_menuUp(&dsoMenu); ssd1306_menuUp(&menu);
     Serial.println(key);
   }
 
   if (key == 'D'){ // bring the menu down 1 selection
     ssd1306_clearScreen();
-    if (isDSOMenu){
-      ssd1306_menuDown(&dsoMenu);
-    }
-    if (!isDSOMenu){
-      ssd1306_menuDown(&menu);
-    }
+    ssd1306_menuDown(&dsoMenu); ssd1306_menuDown(&menu);
     Serial.println(key);
   }
 
@@ -645,96 +732,4 @@ void loop() {
   }
 }
 
-void getDSOAltAz(int objNum, int table) { // input a table number and an object number to get out the altaz coordinates
-                                                                           // exists to easily get the coordinates of DSOs, which is in of itself needlessly convoluted
-                                                                           // code freezes here, idk why
-  dsoTable = table;
-  Serial.print("BEFORE SWITCH    "); // any print in this function is for debugging
-  switch (table){ // see printable packet (objects.pdf) for a list of all objects and their respective table/object number
-    case 0:
-      myAstro.selectStarTable(objNum); // select object x in the star table
-      break;
-    case 1:
-      myAstro.selectMessierTable(objNum); // select object x in the Messier table
-      break;
-    case 2:
-      myAstro.selectCaldwellTable(objNum); // select object x in the Caldwell Table
-    case 3:
-      myAstro.selectHershel400Table(objNum); // select object x in the Hershel table
-      break;
-    case 4:
-      myAstro.selectNGCTable(objNum); // select object x in the NGC table
-      break;
-    case 5:
-      myAstro.selectICTable(objNum); // select object x in the IC table
-      break;
-    case 6:
-      myAstro.selectOtherObjectsTable(objNum); // select object x in the "Others" table
-      break;
-  }
-  Serial.print("AFTER SWITCH     ");
-  double objRA = myAstro.getRAdec(); // get RA of selected object
-  double objDec = myAstro.getDeclinationDec(); // get Dec of selected object
 
-
-  planet.setRAdec(objRA, objDec); // set RA/Dec of SiderealPlanets to that of the object
-  Serial.print("RADEC SET     ");
-  planet.doPrecessFrom2000(); // calculate how the object has moved since 2000, basically where it is in the sky currently
-  Serial.print("PRECESS DONE     ");
-  planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
-  Serial.print("RADEC TO ALTAZ DONE     ");
-  objAngleAz = planet.getAzimuth(); // save object azimuth to a variable
-  objAngleAlt = planet.getAltitude(); // save object altitude to a variable
-  dsoCheck = true;
-  Serial.print("OBJ ALTAZ IS:     "); Serial.print(objAngleAlt); Serial.print("/"); Serial.print(objAngleAz); Serial.print("     ");
-  Serial.println("DSO ALTAZ SET... END OF FUNCTION.... CALCULATING STEPS");
-  calculateSteps(currentAngleAz, objAngleAz, currentAngleAlt, currentAngleAz, dpsX, dpsY);
-}
-
-void updateScreenStats(char *selectedObject, int y, int m, int d, int h, int mi, int s, float alt, float az, bool isDSO){ // selectedObject is the selected object, 
-                                                                                                              // y, m, d, are all the date,
-                                                                                                              // h, mi, s, are the time, 
-                                                                                                              // and alt/az is the altitude/azimuth
-                                                                                               
-  ssd1306_printFixed(0, 8, selectedObject, STYLE_NORMAL); // print the name of whatever object we're looking at to the screen
-  ssd1306_printFixed(0, 16, (String(alt, 3) + "/" + String(az, 3)).c_str(), STYLE_NORMAL); // print the alt/az of the object we are looking at (remains static) to the screen
-  ssd1306_printFixed(0, 24, (String(h) + ":" + String(mi) + ":" + String(s) + "  time in GMT").c_str(), STYLE_NORMAL); // print time to the screen
-  ssd1306_printFixed(0, 32,  (String(y) + "/" + String(m) + "/" + String(d) + "  GMT date").c_str(), STYLE_NORMAL); // print the date to the screen
-  
-  if (isDSO){
-    switch (dsoTable){ // print the type of object at the bottom of screen if DSO
-      case 1:
-        ssd1306_printFixed(0, 40, "Star", STYLE_NORMAL);
-        break;
-
-      case 2:
-        ssd1306_printFixed(0, 40, "Messier", STYLE_NORMAL);
-        break;
-      
-      case 3:
-        ssd1306_printFixed(0, 40, "Caldwell", STYLE_NORMAL);
-        break;
-
-      case 4:
-        ssd1306_printFixed(0, 40, "Hershel 400", STYLE_NORMAL);
-        break;
-
-      case 5:
-        ssd1306_printFixed(0, 40, "NGC", STYLE_NORMAL);
-        break;
-
-      case 6:
-        ssd1306_printFixed(0, 40, "IC", STYLE_NORMAL);
-        break;
-
-      case 7:
-        ssd1306_printFixed(0, 40, "Other", STYLE_NORMAL);
-        break;
-
-      default:
-        break;
-
-    }
-    Serial.println("c");
-  }
-}
