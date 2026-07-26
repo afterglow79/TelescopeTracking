@@ -6,6 +6,25 @@
 
 //TODO keypad control via phone
 
+
+// SEE GITHUB FOR LICENSING INFORMATION || https://github.com/afterglow79/TelescopeTracking
+
+// This is a program that will make your telescope point at any given object in the sky. See objects.pdf in the github repo for the non-planetary bodies that are supported
+// You will need an ESP32C3 Super Mini with this code loaded onto it, an Arduino Uno with GRBL loaded onto it, a CNC Shield V3, and two stepper motors of whatever power is needed to drive your telescope vertically and horizontally
+// You will also need the app, which can be downloaded from TODO FILL IN
+// there are some variables that may need to be changed, for example dps[x/y], which should be the degrees per step of your motor combined with your gear.
+// I will make a full list up here later.
+
+
+// For the x motor, 160 steps at 20 mm/step to go 36 degrees, that is 160/36 = 4.444 deg per step, grbl can do 4.45 so that is what I will round to. Should be marginal.
+// 0.225 deg/step @ 20 mm/step
+
+// For the y motor, 1000 steps @ 20 mm/step to go 90 degrees, that is 1000/90 = 11.11..., grbl can do 11.1, so I will round to that. May be slightly more than marginal
+
+//In order to make the telescope track, you must first point it at whatever object you have selected, then select an object from the menu on the SSD1306 screen.
+
+//note to self cnc shield v3 wiring should go: RED BLUE GREEN BLACK
+
 //access point settings
 const char* AP_SSID = "TelescopeTracker";
 const char* AP_PASSWORD = "changeme123";   // must be 8+ chars, or use "" for open network
