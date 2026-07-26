@@ -1,0 +1,19 @@
+# PlatformIO compiled artifacts and cache
+.pio/
+.pioenvs/
+.piolibdeps/
+.clang_complete
+gcc-flags.json
+
+# Local production binary exports (if generated)
+*.firmware.bin
+
+# VS Code specific files (if using PlatformIO inside VS Code)
+.vscode/.provider_time
+.vscode/extensions.json
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+.vscode/
