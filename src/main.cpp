@@ -183,12 +183,10 @@ void getBodyInfo(){
         Serial.printf("Unknown targetCategory: %s\n", latestData.targetCategory.c_str());
     }
     getPlanetAltAz();
-    
-    Serial.printf("Targeted object is %s %d\n", latestData.name.c_str(), num);
-    Serial.printf("Target RA/Dec: %f, %f\n", planet.getRAdec(), planet.getDeclinationDec());
-    Serial.printf("Target Alt/Az: %f, %f\n", objInfo.objAngleAlt, objInfo.objAngleAz);
 
-    
+    Serial.printf("Targeted object is %s # %d\n", latestData.name.c_str(), num);
+    Serial.printf("Target RA/Dec: %f, %f\n", planet.getRAdec(), planet.getDeclinationDec());
+    Serial.printf("Target Alt/Az: %f, %f\n", objInfo.objAngleAlt, objInfo.objAngleAz);    
 }
 
 void handleTrackingPost() {
@@ -270,7 +268,7 @@ void handleTrackingPost() {
       Serial.printf("Starting RA/Dec: %f, %f\n", planet.getRAdec(), planet.getDeclinationDec());
 
     } else {
-      Serial.printf("Telescope already has starting Alt/Az: %f, %f, skipping", telescope.startAlt, telescope.startAz);
+      Serial.printf("Telescope already has starting Alt/Az: %f, %f, skipping\n", telescope.startAlt, telescope.startAz);
     }
 
     
