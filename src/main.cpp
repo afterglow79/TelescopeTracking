@@ -58,8 +58,8 @@ struct objData{
 struct telescopeData {
   double azimuth;
   double altitude;
-  double startAz;
-  double startAlt;
+  double startAz = -999; // give it some random start number that is unacheviable in a typical run
+  double startAlt = -999; // or else it will assign startAz and startAlt every loop, which will make it so that it always thinks its pointing at the selected start object
   const float dpsX = 0.225; // degrees per step of the motor along the X axis
                             // w/ this, 90 degrees is 400 steps
   const float dpsY = 0.0337;// degrees per step of the motor along the Y axis
@@ -213,7 +213,7 @@ void handleTrackingPost() {
     latestData.initObjectNumber   = doc["initObjectNumber"].as<String>();
     latestData.valid = true;
 
-    Serial.printf("Parsed -> date: %s\n time: %s\n lat: %f\n lon: %f\n targetCategory: %s\n targetNumber: %s\n init: %s\n initObjectCategory: %s\n initObjectNumber: %s\n name: %s\n\n",
+    Serial.printf("Parsed: \ndate: %s\n time: %s\n lat: %f\n lon: %f\n targetCategory: %s\n targetNumber: %s\n init: %s\n initObjectCategory: %s\n initObjectNumber: %s\n name: %s\n\n",
                 latestData.date.c_str(),
                 latestData.time.c_str(),
                 latestData.latitude,
@@ -238,15 +238,27 @@ void handleTrackingPost() {
 
     Serial.printf("Set date to %04d-%02d-%02d and time to %02d:%02d:%02d\n", datetime.year, datetime.month, datetime.day, datetime.hour, datetime.minute, datetime.second);
     
-    if (latestData.initObjectCategory == "Star") {
-        int starNum = latestData.initObjectNumber.toInt();
-        Serial.printf("Selecting star %d\n", starNum);
-        myAstro.selectStarTable(starNum);
-        planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
-    } else if (latestData.initialObject == "Moon") {
-        planet.doMoon();
-    } else if (latestData.initialObject == "Jupiter") {
-        planet.doJupiter();
+    if(telescope.startAz == -999 && telescope.startAlt == -999) { // if the telescope has not been assigned a starting Alt/Az, assign it now
+      if (latestData.initObjectCategory == "Star") {
+          int starNum = latestData.initObjectNumber.toInt();
+          Serial.printf("Selecting star %d\n", starNum);
+          myAstro.selectStarTable(starNum);
+          planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
+          planet.doPrecessFrom2000();
+      } else if (latestData.initialObject == "Moon") {
+          planet.doMoon();
+          Serial.println("Selecting Moon");
+      } else if (latestData.initialObject == "Jupiter") {
+          planet.doJupiter();
+          Serial.println("Selecting Jupiter");
+      }
+      planet.doRAdec2AltAz();
+      Serial.printf("Starting Alt/Az: %f, %f\n", planet.getAltitude(), planet.getAzimuth());
+      telescope.startAlt = planet.getAltitude();
+      telescope.startAz = planet.getAzimuth();
+
+    } else {
+      Serial.printf("Telescope already has starting Alt/Az: %f, %f\n, skipping", telescope.startAlt, telescope.startAz);
     }
     server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
