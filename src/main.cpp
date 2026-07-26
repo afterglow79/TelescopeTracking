@@ -64,8 +64,8 @@ struct telescopeData {
                             // w/ this, 90 degrees is 400 steps
   const float dpsY = 0.0337;// degrees per step of the motor along the Y axis
                             // w/ this, 90 degrees is 1000 steps
-  double xStep;
-  double yStep;
+  double xStep; // amount of steps to move along the X axis, calculated by the calculateSteps function
+  double yStep; // amount of steps to move along the Y axis, calculated by the calculateSteps function
   
 } telescope;
 
@@ -113,71 +113,82 @@ void startUpTest(){
     writeCommand(0, 0, true);
 }
 
-void getDSOAltAz(int objNum, int selectedTable){
-    // Implementation for getting DSO Alt/Az
+void getDateTime(){
+  int first  = latestData.date.indexOf('/');
+  int second = latestData.date.indexOf('/', first + 1);
+  datetime.year  = latestData.date.substring(0, first).toInt();
+  datetime.month = latestData.date.substring(first + 1, second).toInt();
+  datetime.day   = latestData.date.substring(second + 1).toInt();
 
-    switch (selectedTable) {
-        case 0:
-          myAstro.selectStarTable(objNum); // select object x in the star table
-          break;
-        case 1:
-          myAstro.selectMessierTable(objNum); // select object x in the Messier table
-          break;
-        case 2:
-          myAstro.selectCaldwellTable(objNum); // select object x in the Caldwell Table
-          break;
-        case 3:
-          myAstro.selectHershel400Table(objNum); // select object x in the Hershel table
-          break;
-        case 4:
-          myAstro.selectNGCTable(objNum); // select object x in the NGC table
-          break;
-        case 5:
-          myAstro.selectICTable(objNum); // select object x in the IC table
-          break;
-        case 6:
-          myAstro.selectOtherObjectsTable(objNum); // select object x in the "Others" table
-          break;
-    }
-    double objRA = myAstro.getRAdec(); // get the RA of the object
-    double objDec = myAstro.getDeclinationDec(); // get the Dec of the
-
-    planet.setRAdec(objRA, objDec); // set RA/Dec of SiderealPlanets to that of the object
-    planet.doPrecessFrom2000(); // calculate how the object has moved since 2000
-    getPlanetAltAz(); // convert from RA/Dec to AltAz and save to objInfo
+  first  = latestData.time.indexOf(':');
+  second = latestData.time.indexOf(':', first + 1);
+  datetime.hour   = latestData.time.substring(0, first).toInt();
+  datetime.minute = latestData.time.substring(first + 1, second).toInt();
+  datetime.second = latestData.time.substring(second + 1).toInt();
 }
 
-void getDateTime(){
-        char dateDelimiter = '-';
-    char timeDelimiter = ':';
-    
-    int valueCount = 0;
-    
-    int startIdx = 0;
-    int endIdx = latestData.date.indexOf(dateDelimiter);
-    while (endIdx >= -1 && valueCount < 3) {
-        String value = latestData.date.substring(startIdx, endIdx);
-        if (valueCount == 0) datetime.year = value.toInt();
-        else if (valueCount == 1) datetime.month = value.toInt();
-        else if (valueCount == 2) datetime.day = value.toInt();
+void getBodyInfo(){
+  int num = latestData.targetNumber.toInt();
 
-        startIdx = endIdx + 1;
-        endIdx = latestData.date.indexOf(dateDelimiter, startIdx);
-        valueCount++;
-    }
-    startIdx = 0;
-    endIdx = latestData.time.indexOf(timeDelimiter);
-    valueCount = 0;
-    while (endIdx >= -1 && valueCount < 3) {
-        String value = latestData.time.substring(startIdx, endIdx);
-        if (valueCount == 0) datetime.hour = value.toInt();
-        else if (valueCount == 1) datetime.minute = value.toInt();
-        else if (valueCount == 2) datetime.second = value.toInt();
+    if (latestData.targetCategory == "Star") {
+        myAstro.selectStarTable(num);
+        planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
 
-        startIdx = endIdx + 1;
-        endIdx = latestData.time.indexOf(timeDelimiter, startIdx);
-        valueCount++;
+    } else if (latestData.targetCategory == "Messier") {
+        myAstro.selectMessierTable(num);
+        planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
+
+    } else if (latestData.targetCategory == "Caldwell") {
+        myAstro.selectCaldwellTable(num);
+        planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
+
+    } else if (latestData.targetCategory == "Herschel400") {
+        myAstro.selectHershel400Table(num);
+        planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
+
+    } else if (latestData.targetCategory == "NGC") {
+        myAstro.selectNGCTable(num);
+        planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
+
+    } else if (latestData.targetCategory == "IC") {
+        myAstro.selectICTable(num);
+        planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
+
+    } else if (latestData.targetCategory == "Other") {
+        myAstro.selectOtherObjectsTable(num);
+        planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
+
+    } else if (latestData.targetCategory == "Planet"){
+        if(latestData.name == "Mercury"){
+          planet.doMercury();
+        } else if(latestData.name == "Venus"){
+          planet.doVenus();
+        } else if(latestData.name == "Moon"){
+          planet.doMoon();
+        } else if(latestData.name == "Mars"){
+          planet.doMars();
+        } else if (latestData.name == "Jupiter"){
+          planet.doJupiter();
+        } else if(latestData.name == "Saturn"){
+          planet.doSaturn();
+        } else if(latestData.name == "Uranus"){
+          planet.doUranus();
+        } else if(latestData.name == "Neptune"){
+          planet.doNeptune();
+        } else {
+          Serial.printf("Unknown planet name: %s\n", latestData.name.c_str());
+        }
     }
+      else {
+        Serial.printf("Unknown targetCategory: %s\n", latestData.targetCategory.c_str());
+    }
+    getPlanetAltAz();
+    
+    Serial.printf("Targeted object is %s %d\n", latestData.name.c_str(), num);
+    Serial.printf("Target RA/Dec: %f, %f\n", planet.getRAdec(), planet.getDeclinationDec());
+    Serial.printf("Target Alt/Az: %f, %f\n", objInfo.objAngleAlt, objInfo.objAngleAz);
+
+    
 }
 
 void handleTrackingPost() {
@@ -213,17 +224,17 @@ void handleTrackingPost() {
     latestData.initObjectNumber   = doc["initObjectNumber"].as<String>();
     latestData.valid = true;
 
-    Serial.printf("Parsed: \ndate: %s\n time: %s\n lat: %f\n lon: %f\n targetCategory: %s\n targetNumber: %s\n init: %s\n initObjectCategory: %s\n initObjectNumber: %s\n name: %s\n\n",
+    Serial.printf("Parsed: \ndate: %s\n time: %s\n lat: %f\n lon: %f\n targetName: %s\n targetCategory: %s\n targetNumber: %s\n init: %s\n initObjectCategory: %s\n initObjectNumber: %s\n\n",
                 latestData.date.c_str(),
                 latestData.time.c_str(),
                 latestData.latitude,
                 latestData.longitude,
+                latestData.name.c_str(),
                 latestData.targetCategory.c_str(),
                 latestData.targetNumber.c_str(),
                 latestData.initialObject.c_str(),
                 latestData.initObjectCategory.c_str(),
-                latestData.initObjectNumber.c_str(),
-                latestData.name.c_str());
+                latestData.initObjectNumber.c_str());
 
 
 
@@ -236,7 +247,7 @@ void handleTrackingPost() {
     planet.setGMTdate(datetime.year, datetime.month, datetime.day);
     planet.setGMTtime(datetime.hour, datetime.minute, datetime.second);
 
-    Serial.printf("Set date to %04d-%02d-%02d and time to %02d:%02d:%02d\n", datetime.year, datetime.month, datetime.day, datetime.hour, datetime.minute, datetime.second);
+    Serial.printf("Set date to %04d/%02d/%02d and time to %02d:%02d:%02d\n", datetime.year, datetime.month, datetime.day, datetime.hour, datetime.minute, datetime.second);
     
     if(telescope.startAz == -999 && telescope.startAlt == -999) { // if the telescope has not been assigned a starting Alt/Az, assign it now
       if (latestData.initObjectCategory == "Star") {
@@ -244,7 +255,6 @@ void handleTrackingPost() {
           Serial.printf("Selecting star %d\n", starNum);
           myAstro.selectStarTable(starNum);
           planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
-          planet.doPrecessFrom2000();
       } else if (latestData.initialObject == "Moon") {
           planet.doMoon();
           Serial.println("Selecting Moon");
@@ -252,14 +262,25 @@ void handleTrackingPost() {
           planet.doJupiter();
           Serial.println("Selecting Jupiter");
       }
+      planet.doPrecessFrom2000();
       planet.doRAdec2AltAz();
-      Serial.printf("Starting Alt/Az: %f, %f\n", planet.getAltitude(), planet.getAzimuth());
       telescope.startAlt = planet.getAltitude();
       telescope.startAz = planet.getAzimuth();
+      Serial.printf("Starting Alt/Az: %f, %f\n", telescope.startAlt, telescope.startAz);
+      Serial.printf("Starting RA/Dec: %f, %f\n", planet.getRAdec(), planet.getDeclinationDec());
 
     } else {
-      Serial.printf("Telescope already has starting Alt/Az: %f, %f\n, skipping", telescope.startAlt, telescope.startAz);
+      Serial.printf("Telescope already has starting Alt/Az: %f, %f, skipping", telescope.startAlt, telescope.startAz);
     }
+
+    
+    getBodyInfo();
+    telescope.xStep = calculateSteps(telescope.startAz, objInfo.objAngleAz, true);
+    telescope.yStep = calculateSteps(telescope.startAlt, objInfo.objAngleAlt, false);
+    Serial.printf("Calculated steps to move: X: %f, Y: %f\n", telescope.xStep, telescope.yStep);
+    writeCommand(telescope.xStep, telescope.yStep, true);
+    
+
     server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
