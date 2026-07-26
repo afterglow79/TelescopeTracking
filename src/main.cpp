@@ -51,8 +51,8 @@ struct miscData{
 } miscInfo;
 
 struct objData{
-    float objAngleAz;
-    float objAngleAlt;
+    double objAngleAz;
+    double objAngleAlt;
 } objInfo;
 
 struct telescopeData {
@@ -76,10 +76,10 @@ void writeCommand(float stepsX, float stepsY, bool writeToRegularSerial) { // wr
         Serial.print(" y");
         Serial.println(stepsY);
     }
-    Serial.print("G0 x");
-    Serial.print(stepsX);
-    Serial.print(" y");
-    Serial.println(stepsY);
+    Serial1.print("G0 x");
+    Serial1.print(stepsX);
+    Serial1.print(" y");
+    Serial1.println(stepsY);
 }
 
 float calculateSteps(float currentPos, float desiredPos, bool isX) { // calculates the amount of steps to move along a given axis, given the current position and desired position
@@ -184,7 +184,7 @@ void getBodyInfo(){
     }
     getPlanetAltAz();
 
-    Serial.printf("Targeted object is %s # %d\n", latestData.name.c_str(), num);
+    Serial.printf("Targeted object is %s #%d\n", latestData.name.c_str(), num);
     Serial.printf("Target RA/Dec: %f, %f\n", planet.getRAdec(), planet.getDeclinationDec());
     Serial.printf("Target Alt/Az: %f, %f\n", objInfo.objAngleAlt, objInfo.objAngleAz);    
 }
@@ -293,7 +293,11 @@ void setup() {
   Serial.begin(115200);
   delay(5000);
   Serial.println("Starting up...");
-
+  Serial1.begin(9600, SERIAL_8N1, 20, 21); //RX, TX
+  while(!Serial1) {
+    delay(100);
+    Serial.println("Waiting for Serial1 to be ready...");
+  }
   
   Serial.println("Starting AP...");
   WiFi.mode(WIFI_AP);
@@ -322,8 +326,4 @@ void setup() {
 
 void loop() {
   server.handleClient();
-
-  if (latestData.valid) {
-    // latestData.valid = false;
-  }
 }
