@@ -35,6 +35,15 @@ struct TrackingData {
   bool valid = false;
 } latestData;
 
+struct datetime{
+  int year;
+  int month;
+  int day;
+  int hour;
+  int minute;
+  int second;
+} datetime;
+
 struct miscData{
     float stepsTakenAlt;
     float stepsTakenAz;
@@ -138,6 +147,39 @@ void getDSOAltAz(int objNum, int selectedTable){
     getPlanetAltAz(); // convert from RA/Dec to AltAz and save to objInfo
 }
 
+void getDateTime(){
+        char dateDelimiter = '-';
+    char timeDelimiter = ':';
+    
+    int valueCount = 0;
+    
+    int startIdx = 0;
+    int endIdx = latestData.date.indexOf(dateDelimiter);
+    while (endIdx >= -1 && valueCount < 3) {
+        String value = latestData.date.substring(startIdx, endIdx);
+        if (valueCount == 0) datetime.year = value.toInt();
+        else if (valueCount == 1) datetime.month = value.toInt();
+        else if (valueCount == 2) datetime.day = value.toInt();
+
+        startIdx = endIdx + 1;
+        endIdx = latestData.date.indexOf(dateDelimiter, startIdx);
+        valueCount++;
+    }
+    startIdx = 0;
+    endIdx = latestData.time.indexOf(timeDelimiter);
+    valueCount = 0;
+    while (endIdx >= -1 && valueCount < 3) {
+        String value = latestData.time.substring(startIdx, endIdx);
+        if (valueCount == 0) datetime.hour = value.toInt();
+        else if (valueCount == 1) datetime.minute = value.toInt();
+        else if (valueCount == 2) datetime.second = value.toInt();
+
+        startIdx = endIdx + 1;
+        endIdx = latestData.time.indexOf(timeDelimiter, startIdx);
+        valueCount++;
+    }
+}
+
 void handleTrackingPost() {
     if (!server.hasArg("plain")) {
       server.send(400, "application/json", "{\"error\":\"no body\"}");
@@ -184,10 +226,21 @@ void handleTrackingPost() {
                 latestData.name.c_str());
 
 
+
+
     // TODO: kick off tracking/motor logic here now that latestData is populated
     planet.setLatLong(latestData.latitude, latestData.longitude);
+    Serial.printf("Set lat/long to %f, %f\n", latestData.latitude, latestData.longitude);
+
+    getDateTime();
+    planet.setGMTdate(datetime.year, datetime.month, datetime.day);
+    planet.setGMTtime(datetime.hour, datetime.minute, datetime.second);
+
+    Serial.printf("Set date to %04d-%02d-%02d and time to %02d:%02d:%02d\n", datetime.year, datetime.month, datetime.day, datetime.hour, datetime.minute, datetime.second);
+    
     if (latestData.initObjectCategory == "Star") {
         int starNum = latestData.initObjectNumber.toInt();
+        Serial.printf("Selecting star %d\n", starNum);
         myAstro.selectStarTable(starNum);
         planet.setRAdec(myAstro.getRAdec(), myAstro.getDeclinationDec());
     } else if (latestData.initialObject == "Moon") {
