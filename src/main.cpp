@@ -4,9 +4,6 @@
 #include <SiderealPlanets.h>
 #include <SiderealObjects.h>
 
-//TODO keypad control via phone
-
-
 // SEE GITHUB FOR LICENSING INFORMATION || https://github.com/afterglow79/TelescopeTracking
 
 // This is a program that will make your telescope point at any given object in the sky. See objects.pdf in the github repo for the non-planetary bodies that are supported
@@ -23,7 +20,7 @@
 
 //In order to make the telescope track, you must first point it at whatever object you have selected, then select an object from the menu on the SSD1306 screen.
 
-//note to self cnc shield v3 wiring should go: RED BLUE GREEN BLACK
+//note to self cnc shield v3 wiring should go: RED BLUE GREEN BLACK | ORANGE GREEN YELLOW BLUE
 
 //access point settings
 const char* AP_SSID = "TelescopeTracker";
@@ -38,6 +35,9 @@ IPAddress gateway(192, 168, 10, 1);
 IPAddress subnet(255, 255, 255, 0);
 
 WebServer server(80);
+
+unsigned long lastFollowMillisX = 0; // for tracking when to move the motors
+unsigned long lastFollowMillisY = 0; // for tracking when to move the motors
 
 // phone data
 struct TrackingData {
@@ -67,6 +67,7 @@ struct miscData{
     float stepsTakenAlt;
     float stepsTakenAz;
     int starNum;
+    bool isFollowingSky;
 } miscInfo;
 
 struct objData{
@@ -85,7 +86,10 @@ struct telescopeData {
                             // w/ this, 90 degrees is 1000 steps
   double xStep; // amount of steps to move along the X axis, calculated by the calculateSteps function
   double yStep; // amount of steps to move along the Y axis, calculated by the calculateSteps function
-  
+  double secondsPerStepX; // how long to wait per step when following earth's rotation.
+  double secondsPerStepY; // how long to wait per step when following earth's rotation.
+  bool negateX = false; // if true, the X axis will be negated when moving. This will only apply to the sky tracking, not other kind of movement.
+  bool negateY = false; // if true, the Y axis will be negated when moving. This will only apply to the sky tracking, not other kind of movement.
 } telescope;
 
 void writeCommand(float stepsX, float stepsY, bool writeToRegularSerial) { // writes the amount of steps to move in both direcetions in standard G-code
@@ -108,7 +112,7 @@ float calculateSteps(float currentPos, float desiredPos, bool isX) { // calculat
         stepsToMove = ((currentPos-desiredPos) / telescope.dpsX); // Calculate how many steps the motor needs to move given the gear ratio. 
                                                               // Can be negated to move the motor the other direction
         miscInfo.stepsTakenAz = miscInfo.stepsTakenAz + stepsToMove;
-}
+    }
     else {
         stepsToMove = ((currentPos-desiredPos) / telescope.dpsY);
         miscInfo.stepsTakenAlt = miscInfo.stepsTakenAlt + stepsToMove;
@@ -116,6 +120,11 @@ float calculateSteps(float currentPos, float desiredPos, bool isX) { // calculat
     
 
     return stepsToMove;
+}
+
+float computeSecondsPerStep(float degreesPerStep) { // calculates how long to wait per step when following earth's rotation
+    float value = degreesPerStep * 239.3; // degrees per step * (24 hours / 360 degrees) * 60 minutes/hour * 60 seconds/minute
+    return value;
 }
 
 void getPlanetAltAz(){
@@ -141,12 +150,23 @@ void getDateTime(){
 
   first  = latestData.time.indexOf(':');
   second = latestData.time.indexOf(':', first + 1);
+
   datetime.hour   = latestData.time.substring(0, first).toInt();
   datetime.minute = latestData.time.substring(first + 1, second).toInt();
   datetime.second = latestData.time.substring(second + 1).toInt();
 }
 
+void getTimeRegular(String timeString){
+  int first  = timeString.indexOf(':');
+  int second = timeString.indexOf(':', first + 1);
+  datetime.hour   = timeString.substring(0, first).toInt();
+  datetime.minute = timeString.substring(first + 1, second).toInt();
+  datetime.second = timeString.substring(second + 1).toInt();
+  Serial.println("Parsed time: " + String(datetime.hour) + ":" + String(datetime.minute) + ":" + String(datetime.second));
+}
+
 void getBodyInfo(){
+  planet.setGMTtime(datetime.hour, datetime.minute, datetime.second);
   int num = latestData.targetNumber.toInt();
 
     if (latestData.targetCategory == "Star") {
@@ -228,17 +248,17 @@ void handleTrackingPost() {
       return;
     }
 
-    latestData.date          = doc["date"].as<String>();
-    latestData.time          = doc["time"].as<String>();
-    latestData.latitude      = doc["latitude"].as<double>();
-    latestData.longitude     = doc["longitude"].as<double>();
+    latestData.date = doc["date"].as<String>();
+    latestData.time = doc["time"].as<String>();
+    latestData.latitude = doc["latitude"].as<double>();
+    latestData.longitude = doc["longitude"].as<double>();
     latestData.initialObject = doc["initialObject"].as<String>();
-    latestData.name          = doc["name"].as<String>();
-    latestData.targetCategory     = doc["targetCategory"].as<String>();
-    latestData.targetNumber       = doc["targetNumber"].as<String>();
-    latestData.initialObject      = doc["initialObject"].as<String>();
+    latestData.name = doc["name"].as<String>();
+    latestData.targetCategory = doc["targetCategory"].as<String>();
+    latestData.targetNumber = doc["targetNumber"].as<String>();
+    latestData.initialObject = doc["initialObject"].as<String>();
     latestData.initObjectCategory = doc["initObjectCategory"].as<String>();
-    latestData.initObjectNumber   = doc["initObjectNumber"].as<String>();
+    latestData.initObjectNumber = doc["initObjectNumber"].as<String>();
     latestData.valid = true;
 
     Serial.printf("Parsed: \ndate: %s\n time: %s\n lat: %f\n lon: %f\n targetName: %s\n targetCategory: %s\n targetNumber: %s\n init: %s\n initObjectCategory: %s\n initObjectNumber: %s\n\n",
@@ -255,8 +275,6 @@ void handleTrackingPost() {
 
 
 
-
-    // TODO: kick off tracking/motor logic here now that latestData is populated
     planet.setLatLong(latestData.latitude, latestData.longitude);
     Serial.printf("Set lat/long to %f, %f\n", latestData.latitude, latestData.longitude);
 
@@ -301,11 +319,156 @@ void handleTrackingPost() {
     server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
+void handleMovePost() {
+    if (!server.hasArg("plain")) {
+      server.send(400, "application/json", "{\"error\":\"no body\"}");
+      return;
+    }
+
+    String body = server.arg("plain");
+    Serial.println("Received JSON:");
+    Serial.println(body);
+
+    StaticJsonDocument<256> doc;
+    DeserializationError err = deserializeJson(doc, body);
+
+    if (err) {
+      Serial.print("JSON parse failed: ");
+      Serial.println(err.c_str());
+      server.send(400, "application/json", "{\"error\":\"bad json\"}");
+      return;
+    }
+
+    float moveX = doc["moveX"].as<float>();
+    float moveY = doc["moveY"].as<float>();
+    String isDegrees = doc["isDegrees"].as<String>();
+
+    Serial.printf("Parsed move command: moveX: %f, moveY: %f, isDegrees: %s\n", moveX, moveY, isDegrees == "true" ? "true" : "false");
+    if(isDegrees == "true"){
+      moveX = moveX * telescope.dpsX; // convert degrees to steps
+      moveY = moveY * telescope.dpsY; // convert degrees to steps
+    }
+    writeCommand(moveX, moveY, true);
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
+void handleFollowPost(){
+  if (!server.hasArg("plain")) {
+      server.send(400, "application/json", "{\"error\":\"no body\"}");
+      return;
+  }
+
+  String body = server.arg("plain");
+  Serial.println("Received JSON:");
+  Serial.println(body);
+
+  StaticJsonDocument<256> doc;
+  DeserializationError err = deserializeJson(doc, body);
+
+  if (err) {
+    Serial.print("JSON parse failed: ");
+    Serial.println(err.c_str());
+    server.send(400, "application/json", "{\"error\":\"bad json\"}");
+    return;
+  }
+
+  String follow = doc["follow"].as<String>();
+
+  if (follow == "true"){
+    miscInfo.isFollowingSky = true;
+  } else {
+    miscInfo.isFollowingSky = false;
+  }
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
+void handleRegularUpdatePost(){
+   if (!server.hasArg("plain")) {
+      server.send(400, "application/json", "{\"error\":\"no body\"}");
+      return;
+  }
+
+  String body = server.arg("plain");
+  Serial.println("Received JSON:");
+  Serial.println(body);
+
+  StaticJsonDocument<256> doc;
+  DeserializationError err = deserializeJson(doc, body);
+
+  if (err) {
+    Serial.print("JSON parse failed: ");
+    Serial.println(err.c_str());
+    server.send(400, "application/json", "{\"error\":\"bad json\"}");
+    return;
+  }
+  String time = doc["time"].as<String>();
+  getTimeRegular(time);
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
 void handleNotFound() {
   Serial.printf("Unmatched request: %s %s\n", 
                 (server.method() == HTTP_GET) ? "GET" : "POST", 
                 server.uri().c_str());
   server.send(404, "text/plain", "Not found");
+}
+
+void updateTrackingIntervals() { // unused for now
+    // 1. Convert positions to radians
+    double lat =  latestData.latitude * M_PI / 180.0;
+    double alt =  objInfo.objAngleAlt * M_PI / 180.0;
+    double az  =  objInfo.objAngleAz * M_PI / 180.0;
+
+    // 2. Earth rotation rate (0.00417807 deg/sec)
+    const double OMEGA = 0.00417807; 
+
+    // 3. Zenith Safety: Prevent tan(90) from crashing Azimuth
+    if (objInfo.objAngleAlt > 88.0) alt = 88.0 * M_PI / 180.0;
+
+    // 4. Calculate change rates (degrees per second)
+    // Assuming X is Azimuth and Y is Altitude
+    double degPerSecX = OMEGA * (sin(lat) - tan(alt) * cos(lat) * cos(az)); // Azimuth
+    double degPerSecY = OMEGA * cos(lat) * sin(az);                        // Altitude
+
+    // 5. Determine directions and update driver pins/variables
+    // Replace 'setMotorDirectionX' with your code to set the physical DIR pins
+    if (degPerSecX >= 0) {
+        telescope.negateX = false; // Set direction for X axis
+    } else {
+        telescope.negateX = true;  // Set direction for X axis
+    }
+
+    if (degPerSecY >= 0) {
+        telescope.negateY = false; // Set direction for Y axis
+    } else {
+        telescope.negateY = true;  // Set direction for Y axis
+    }
+
+    // 6. Calculate seconds per step (ignore direction sign using abs)
+    degPerSecX = std::abs(degPerSecX);
+    degPerSecY = std::abs(degPerSecY);
+
+    // 7. Avoid division by zero if an axis temporarily stops moving
+    if (degPerSecX > 0.000001) {
+        telescope.secondsPerStepX = telescope.dpsX / degPerSecX;
+    } else {
+        telescope.secondsPerStepX = 999999; // Set safely high so it doesn't step
+    }
+
+    if (degPerSecY > 0.000001) {
+        telescope.secondsPerStepY = telescope.dpsY / degPerSecY;
+    } else {
+        telescope.secondsPerStepY = 999999; // Set safely high so it doesn't step
+    }
+}
+
+void updateLocationForFollow() {
+  planet.setGMTtime(datetime.hour, datetime.minute, datetime.second);
+  getBodyInfo();
+  telescope.xStep = calculateSteps(telescope.startAz, objInfo.objAngleAz, true);
+  telescope.yStep = calculateSteps(telescope.startAlt, objInfo.objAngleAlt, false);
+  writeCommand(telescope.xStep, telescope.yStep, true);
+  Serial.printf("Updated steps for follow: X: %f, Y: %f\n", telescope.xStep, telescope.yStep);
 }
 
 void setup() {
@@ -328,7 +491,10 @@ void setup() {
   Serial.print("AP IP address: ");
   Serial.println(WiFi.softAPIP());  // should print 192.168.10.1
 
-  server.on("/", HTTP_POST, handleTrackingPost);
+  server.on("/track", HTTP_POST, handleTrackingPost);
+  server.on("/move", HTTP_POST, handleMovePost);
+  server.on("/follow", HTTP_POST, handleFollowPost);
+  server.on("/regularupdate", HTTP_POST, handleRegularUpdatePost);
   server.onNotFound(handleNotFound);
   server.begin();
 
@@ -340,9 +506,25 @@ void setup() {
   planet.useAutoDST(); // check for daylight savings time
   delay(500);
   startUpTest();
+
+  telescope.secondsPerStepX = computeSecondsPerStep(telescope.dpsX);
+  telescope.secondsPerStepY = computeSecondsPerStep(telescope.dpsY);
+
+  Serial.print("Seconds per step X: "); Serial.println(telescope.secondsPerStepX);
+  Serial.print("Seconds per step Y: "); Serial.println(telescope.secondsPerStepY);
   Serial.println("Setup complete");
 }
 
 void loop() {
   server.handleClient();
+
+  unsigned long currentMillis = millis();
+  
+  static unsigned long lastRateUpdate = 0;
+  if (currentMillis - lastRateUpdate >= 2000) {
+    if (miscInfo.isFollowingSky){
+      updateLocationForFollow();
+      lastRateUpdate = currentMillis;
+    }
+  }
 }
