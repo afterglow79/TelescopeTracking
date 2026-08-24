@@ -14,13 +14,14 @@
 
 
 // For the x motor, 160 steps at 20 mm/step to go 36 degrees, that is 160/36 = 4.444 deg per step, grbl can do 4.45 so that is what I will round to. Should be marginal.
+// ^^ I don't know what I was trying to say here, 36/160 is 0.225 deg/step so I assume this number is right
 // 0.225 deg/step @ 20 mm/step
 
 // For the y motor, 1000 steps @ 20 mm/step to go 90 degrees, that is 1000/90 = 11.11..., grbl can do 11.1, so I will round to that. May be slightly more than marginal
-
+// ^^ same as above, 
 //In order to make the telescope track, you must first point it at whatever object you have selected, then select an object from the menu on the SSD1306 screen.
 
-//note to self cnc shield v3 wiring should go: RED BLUE GREEN BLACK | ORANGE GREEN YELLOW BLUE
+//note to self cnc shield v3 wiring should go: RED BLUE GREEN BLACK | y ORANGE GREEN YELLOW BLUE | x 
 
 //access point settings
 const char* AP_SSID = "TelescopeTracker";
@@ -110,7 +111,7 @@ float calculateSteps(float currentPos, float desiredPos, bool isX) { // calculat
     float stepsToMove;
     if (isX) {
         stepsToMove = ((currentPos-desiredPos) / telescope.dpsX); // Calculate how many steps the motor needs to move given the gear ratio. 
-                                                              // Can be negated to move the motor the other direction
+                                                                  // Can be negated to move the motor the other direction
         miscInfo.stepsTakenAz = miscInfo.stepsTakenAz + stepsToMove;
     }
     else {
@@ -128,10 +129,17 @@ float computeSecondsPerStep(float degreesPerStep) { // calculates how long to wa
 }
 
 void getPlanetAltAz(){
+    planet.doPrecessFrom2000(); // precess from J2000 to current date/time
     planet.doRAdec2AltAz(); // convert from RA/Dec to AltAz
     objInfo.objAngleAz = planet.getAzimuth();
     objInfo.objAngleAlt = planet.getAltitude();
 
+}
+
+void moveRel(float stepsX, float stepsY) { // move the telescope relative to its current position, given the amount of steps to move in both directions
+    writeCommand(stepsX + miscInfo.stepsTakenAz, stepsY + miscInfo.stepsTakenAlt, true);
+    miscInfo.stepsTakenAz = miscInfo.stepsTakenAz + stepsX;
+    miscInfo.stepsTakenAlt = miscInfo.stepsTakenAlt + stepsY;
 }
 
 void startUpTest(){
@@ -156,13 +164,22 @@ void getDateTime(){
   datetime.second = latestData.time.substring(second + 1).toInt();
 }
 
+void getDateRegular(String dateString){
+  int first  = dateString.indexOf('/');
+  int second = dateString.indexOf('/', first + 1);
+  datetime.year  = dateString.substring(0, first).toInt();
+  datetime.month = dateString.substring(first + 1, second).toInt();
+  datetime.day   = dateString.substring(second + 1).toInt();
+  //Serial.println("Parsed date: " + String(datetime.year) + "/" + String(datetime.month) + "/" + String(datetime.day));
+}
+
 void getTimeRegular(String timeString){
   int first  = timeString.indexOf(':');
   int second = timeString.indexOf(':', first + 1);
   datetime.hour   = timeString.substring(0, first).toInt();
   datetime.minute = timeString.substring(first + 1, second).toInt();
   datetime.second = timeString.substring(second + 1).toInt();
-  Serial.println("Parsed time: " + String(datetime.hour) + ":" + String(datetime.minute) + ":" + String(datetime.second));
+  //Serial.println("Parsed time: " + String(datetime.hour) + ":" + String(datetime.minute) + ":" + String(datetime.second));
 }
 
 void getBodyInfo(){
@@ -348,7 +365,7 @@ void handleMovePost() {
       moveX = moveX * telescope.dpsX; // convert degrees to steps
       moveY = moveY * telescope.dpsY; // convert degrees to steps
     }
-    writeCommand(moveX, moveY, true);
+    moveRel(moveX, moveY);
     server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -402,7 +419,9 @@ void handleRegularUpdatePost(){
     return;
   }
   String time = doc["time"].as<String>();
+  String date = doc["date"].as<String>();
   getTimeRegular(time);
+  getDateRegular(date);
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -465,10 +484,9 @@ void updateTrackingIntervals() { // unused for now
 void updateLocationForFollow() {
   planet.setGMTtime(datetime.hour, datetime.minute, datetime.second);
   getBodyInfo();
-  telescope.xStep = calculateSteps(telescope.startAz, objInfo.objAngleAz, true);
-  telescope.yStep = calculateSteps(telescope.startAlt, objInfo.objAngleAlt, false);
-  writeCommand(telescope.xStep, telescope.yStep, true);
-  Serial.printf("Updated steps for follow: X: %f, Y: %f\n", telescope.xStep, telescope.yStep);
+  float xStep = calculateSteps(telescope.startAz, objInfo.objAngleAz, true);
+  float yStep = calculateSteps(telescope.startAlt, objInfo.objAngleAlt, false);
+  moveRel(xStep, yStep);
 }
 
 void setup() {
@@ -480,7 +498,6 @@ void setup() {
     delay(100);
     Serial.println("Waiting for Serial1 to be ready...");
   }
-  
   Serial.println("Starting AP...");
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(local_IP, gateway, subnet);
